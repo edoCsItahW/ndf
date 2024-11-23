@@ -1,0 +1,25 @@
+{
+  "name": "ndf",
+  "displayName": "ndf-language-support",
+  "description": "ndf language is a scripting language used to describe game data.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "ndf",
+      "aliases": ["ndf", "ndf"],
+      "extensions": [".ndf"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "ndf",
+      "scopeName": "source.ndf",
+      "path": "./syntaxes/ndf.tmLanguage.json"
+    }]
+  }
+}

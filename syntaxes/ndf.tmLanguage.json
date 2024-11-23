@@ -1,0 +1,176 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "ndf",
+	"patterns": [
+		{"name": "markup.underline.link.ndf", "match": "(\\$|~|\\.)/.*[,\\n]"},
+		{
+			"name": "comment.ndf",
+			"match": "//.*$"
+		},
+		{
+			"name": "comment.block.ndf",
+			"begin": "/\\*",
+			"end": "\\*/",
+			"patterns": [
+				{
+					"include": "#comment"
+				}
+			]
+		},
+		{
+			"name": "keyword.export.ndf",
+			"match": "\\b(export|is|template|unnamed|nil|private|div|MAP|true|false)\\b"
+		},
+		{
+			"name": "variable.identifier.ndf",
+			"match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+		},
+		{
+			"name": "string.quoted",
+			"begin": "'",
+			"end": "'"
+		},
+		{
+			"name": "string.quoted.double",
+			"begin": "\"",
+			"end": "\""
+		},
+		{
+			"name": "constant.numeric",
+			"match": "\\b(0x[0-9a-fA-F]+|\\d+)\\b"
+		},
+		{
+			"name": "constant.numeric.float",
+			"match": "\\b\\d+\\.\\d+\\b"
+		},
+		{
+			"name": "storage.type",
+			"match": "\\b(bool|string|int|float|vector|tuple)\\b"
+		},
+		{
+			"name": "constructor.ndf",
+			"match": "\\b\\w+\\s*$"
+		},
+		{
+			"name": "keyword.operator",
+			"match": "(\\+|-|\\*|/|%|div|<|>|<=|>=|=|!=|\\|)"
+		},
+		{
+			"name": "meta.template.ndf",
+			"begin": "template",
+			"end": "$",
+			"patterns": [
+				{
+					"include": "#variable.identifier.ndf"
+				},
+				{
+					"include": "#variable.identifier.ndf"
+				},
+				{
+					"include": "#constant.numeric.ndf"
+				},
+				{
+					"include": "#string.quoted.ndf"
+				},
+				{
+					"name": "meta.template.parameters.ndf",
+					"begin": "\\[",
+					"end": "\\]",
+					"patterns": [
+						{
+							"name": "variable.parameter.ndf",
+							"match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+						},
+						{
+							"name": "constant.default-value.ndf",
+							"match": "=[^,\\]]+"
+						}
+					]
+				}
+			]
+		},
+		{  
+            "name": "meta.object.ndf",  
+            "begin": "\\b\\w+\\s+is\\s+\\w+\\s*\\(",  
+            "end": "\\)",  
+            "patterns": [  
+                {  
+                    "include": "#variable.identifier.ndf"  
+                },  
+                {  
+                    "include": "#string.quoted.ndf"  
+                },  
+                {  
+                    "include": "#constant.numeric.ndf"  
+                },  
+                {  
+                    "name": "array.ndf",  
+                    "begin": "\\[",  
+                    "end": "\\]",  
+                    "patterns": [  
+                        {  
+                            "name": "tuple.ndf",  
+                            "begin": "\\(",  
+                            "end": "\\)",  
+                            "patterns": [  
+                                {  
+                                    "include": "#variable.identifier.ndf"  
+                                },  
+                                {  
+                                    "include": "#constant.numeric.ndf"  
+                                }  
+                            ]  
+                        }  
+                    ]  
+                }  
+            ]  
+        },
+		{  
+            "name": "array.ndf",  
+            "begin": "\\[",  
+            "end": "\\]",  
+            "patterns": [  
+                {  
+                    "name": "constant.numeric.ndf",  
+                    "match": "\\b(0x[0-9A-Fa-f]+|\\d+)\\b"  
+                },  
+                {  
+                    "name": "string.quoted.ndf",  
+                    "begin": "'",  
+                    "end": "'"  
+                },  
+                {  
+                    "name": "string.quoted.double.ndf",  
+                    "begin": "\"",  
+                    "end": "\""  
+                },  
+                {  
+                    "name": "variable.identifier.ndf",  
+                    "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"  
+                },  
+                {  
+                    "name": "operator.comma.ndf",  
+                    "match": ","  
+                }  
+            ]  
+        }
+	],
+	"repository": {
+		"comment": {
+			"patterns": [
+				{
+					"match": "//.*$",
+					"name": "comment.line.ndf"
+				},
+				{
+					"begin": "/\\*",
+					"end": "\\*/"
+				}
+			]
+		},
+		"variable.identifier.ndf": {
+			"match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+		}
+	},
+	"scopeName": "source.ndf"
+}
