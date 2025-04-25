@@ -1,0 +1,201 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "NDF",
+	"patterns": [
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#literals"
+		},
+		{
+			"include": "#variable.other"
+		},
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#operators"
+		},
+		{
+			"include": "#expressions"
+		}
+	],
+	"repository": {
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.control.ndf",
+					"match": "\\b(private|export|template|is|unnamed|div|MAP|GUID|true|false|nil)\\b"
+				}
+			]
+		},
+		"operators": {
+			"patterns": [
+				{
+					"name": "keyword.operator.ndf",
+					"match": "(\\||&|==|!=|<=|>=|<|>|\\+|-|\\*|/|=|\\?|:|\\.|\\$|~|%)"
+				}
+			]
+		},
+		"literals": {
+			"patterns": [
+				{
+					"name": "constant.numeric.ndf",
+					"match": "\\b\\d+(\\.\\d+)?\\b"
+				},
+				{
+					"name": "constant.language.ndf",
+					"match": "\\b(true|false|nil|int|float|bool|string)\\b"
+				},
+				{
+					"name": "string.quoted.double.ndf",
+					"begin": "\"",
+					"end": "\"",
+					"patterns": [
+						{
+							"name": "constant.character.escape.ndf",
+							"match": "\"\""
+						}
+					]
+				},
+				{
+					"name": "string.quoted.single.ndf",
+					"begin": "'",
+					"end": "'",
+					"patterns": [
+						{
+							"name": "constant.character.escape.single.ndf",
+							"match": "''"
+						}
+					]
+				},
+				{
+					"name": "constant.other.guid.ndf",
+					"match": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+					"captures": {
+						"0": {
+							"name": "constant.other.guid.ndf"
+						}
+					}
+				}
+			]
+		},
+		"expressions": {
+			"patterns": [
+				{
+					"name": "entity.name.function.ndf",
+					"match": "(?<=template\\s+)\\w+"
+				},
+				{
+					"patterns": [
+						{
+							"name": "variable.parameter.ndf",
+							"match": "(?<=<)\\w+(?=>)"
+						},
+						{
+							"name": "variable.constant.ndf",
+							"match": "(?<![/$~.])\\b[A-Z][A-Z0-9_]*\\b"
+						}
+					]
+				},
+				{
+					"begin": "\\[",
+					"end": "\\]",
+					"name": "meta.vector.ndf",
+					"patterns": [
+						{
+							"include": "#comments"
+						},
+						{
+							"include": "#literals"
+						},
+						{
+							"include": "#expressions"
+						}
+					]
+				},
+				{
+					"begin": "MAP\\s*\\[",
+					"end": "\\]",
+					"name": "meta.map.ndf",
+					"patterns": [
+						{
+							"include": "#comments"
+						},
+						{
+							"include": "#literals"
+						},
+						{
+							"begin": "\\(",
+							"end": "\\)",
+							"name": "meta.pair.ndf",
+							"patterns": [
+								{
+									"include": "#comments"
+								},
+								{
+									"include": "#literals"
+								},
+								{
+									"include": "#expressions"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		"variable.other.ndf": {
+			"name": "variable.other.ndf",
+			"match": "([$~.])[\\w/]+",
+			"captures": {
+				"1": {
+					"name": "keyword.operator.ndf"
+				}
+			}
+		},
+		"comments": {
+			"patterns": [
+				{
+					"name": "comment.block.documentation.ndf",
+					"begin": "/\\*\\*",
+					"end": "\\*/",
+					"patterns": [
+						{
+							"include": "#docTags"
+						},
+						{
+							"include": "#comments"
+						}
+					]
+				},
+				{
+					"name": "comment.line.double-slash.ndf",
+					"match": "//.*"
+				},
+				{
+					"name": "comment.block.paren-star.ndf",
+					"begin": "\\(\\*",
+					"end": "\\*\\)",
+					"patterns": [
+						{
+							"include": "#comments"
+						}
+					]
+				},
+				{
+					"name": "comment.block.ndf",
+					"begin": "/\\*",
+					"end": "\\*/",
+					"patterns": [
+						{
+							"include": "#comments"
+						}
+					]
+				}
+			]
+		}
+	},
+	"scopeName": "source.ndf"
+}

@@ -1,0 +1,75 @@
+{
+	"name": "ndf",
+	"description": "ndf language is a scripting language used to describe game data.",
+	"author": "SongTao Xiao",
+	"license": "CC BY-NC-SA 4.0",
+	"version": "2.0.3",
+	"publisher": "2207150234",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/edoCsItahW/ndf.git"
+	},
+	"categories": [
+		"Programming Languages"
+	],
+	"keywords": [
+		"multi-root ready"
+	],
+	"engines": {
+		"vscode": "^1.75.0"
+	},
+	"activationEvents": [],
+	"main": "./out/extension",
+	"contributes": {
+		"languages": [
+			{
+				"id": "ndf",
+				"aliases": [
+					"NDF"
+				],
+				"extensions": [
+					".ndf"
+				],
+				"configuration": "./language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "ndf",
+				"scopeName": "source.ndf",
+				"path": "../syntaxes/ndf.tmLanguage.json"
+			}
+		],
+		"configuration": {
+			"type": "object",
+			"title": "NDF设置",
+			"properties": {
+				"languageServerExample.maxNumberOfProblems": {
+					"scope": "resource",
+					"type": "number",
+					"default": 100,
+					"description": "NDF解析器产生的最大问题数。"
+				},
+				"languageServerExample.trace.server": {
+					"scope": "window",
+					"type": "string",
+					"enum": [
+						"off",
+						"messages",
+						"verbose"
+					],
+					"default": "off",
+					"description": "跟踪VS Code和语言服务器之间的通信。"
+				}
+			}
+		}
+	},
+	"dependencies": {
+		"glob": "^11.0.0",
+		"vscode-languageclient": "^9.0.1"
+	},
+	"devDependencies": {
+		"@types/vscode": "^1.75.1",
+		"@vscode/test-electron": "^2.3.9"
+	}
+}

@@ -1,0 +1,20 @@
+img只能在根目录,否则vscode拓展哪里不会显示
+
+package.json中的名字是ndf不要改成其它了
+
+Access token在哪拿
+
+到https://aex.dev.azure.com/me?mkt=zh-CN
+点击组织information dev.azure.com/edocsitahw
+然后点进左上角有个小人设置那里的Personal Access Tokens
+创建新的
+名字随便一个
+作用域(Scopes)选择Full Access
+
+如何下架插件
+
+https://marketplace.visualstudio.com/manage
+
+CHANGELOG 模板
+
+https://keepachangelog.com/en/1.1.0/
