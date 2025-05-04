@@ -15,6 +15,8 @@
  * @copyrigh-t CC BY-NC-SA 2025. All rights reserved.
  * */
 import { IPos, IType, Nullable } from "./other";
+import { Token } from "../lexer";
+import { Comment } from "../parser";
 
 
 export type BinaryOperator = "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "div" | "|" | "&";
@@ -30,6 +32,8 @@ export interface IAST {
     toString(): string;
     toJSON(): object;
 }
+
+export type SeparatorComments = Array<Comment[]>;
 
 export interface ILeafNode extends IAST {
     get value(): string;
@@ -50,10 +54,22 @@ export interface IInternalStatement extends IInternalNode {
 
 export type IStatement = ILeafStatement | IInternalStatement;
 
+export interface IAssignMark {
+    modifier?: Nullable<Token>;
+    is?: Token;
+}
+
 export interface IAssignment extends IInternalStatement {
-    modifier: Nullable<'private' | 'export'>;
+    modifier: Nullable<'export' | 'private'>;
     name: IIdentifier;
     value: IExpression;
+    marks: IAssignMark;
+}
+
+export interface ITemplateDefMark {
+    modifier?: Nullable<Token>;
+    template?: Token;
+    is?: Token;
 }
 
 export interface ITemplateDef extends IInternalStatement {
@@ -62,23 +78,64 @@ export interface ITemplateDef extends IInternalStatement {
     params: IParameterDecl[];
     extend: IIdentifier;
     members: IMemberAssign[];
+    marks: ITemplateDefMark;
+
+    pos1Comments: IComment[];
+    pos2Comments: IComment[];
+    pos3Comments: IComment[];
+
+    separatorComments1: SeparatorComments;
+    separatorComments2: SeparatorComments;
 }
 
 export interface IUnnamedObj extends IInternalStatement {
     blueprint: IIdentifier;
     args: IArgument[];
+
+    pos1Comments: IComment[];
+
+    separatorComments: SeparatorComments;
+}
+
+export interface ILeafComment extends ILeafStatement {
+}
+
+export interface IInternalComment extends IInternalStatement {}
+
+export type IComment = ILeafComment | IInternalComment;
+
+export interface IFileImportComment extends IInternalComment {
+    path: string;
+    items: string[];
+}
+
+export interface ILibImportComment extends IInternalComment {
+    items: string[];
+}
+
+export interface ICommonComment extends ILeafComment {
+    category: "doc" | "common";
 }
 
 export interface IParameterDecl extends IInternalNode {
     name: IIdentifier;
     annotation: Nullable<ITypeRef>;
     default: Nullable<IExpression>;
+
+    pos1Comments: IComment[];
+}
+
+export interface IMemberAssignMark {
+    operator?: Token;
 }
 
 export interface IMemberAssign extends IInternalNode {
     name: IIdentifier;
     operator: '=' | 'is';
     value: IExpression;
+    marks: IMemberAssignMark;
+
+    pos1Comments: IComment[];
 }
 
 export interface ILeafTypeRef extends ILeafNode {}
@@ -94,11 +151,15 @@ export interface IBuiltinType extends ILeafTypeRef {
 export interface IGenericType extends IInternalTypeRef {
     name: IIdentifier;
     typeParams: ITypeRef[];
+
+    pos1Comments: IComment[];
+
+    separatorComments: SeparatorComments;
 }
 
 export interface ILeafExpression extends ILeafNode {}
 
-export interface IInternalExpression extends IAST {}
+export interface IInternalExpression extends IInternalNode {}
 
 export type IExpression = ILeafExpression | IInternalExpression;
 
@@ -115,26 +176,44 @@ export interface IBinaryExpr extends IInternalExpression{
     left: IExpression;
     operator: BinaryOperator;
     right: IExpression;
+
+    pos1Comments: IComment[];
+    pos2Comments: IComment[];
 }
 
 export interface ITernaryExpr extends IInternalExpression {
     condition: IExpression;
     trueExpr: IExpression;
     falseExpr: IExpression;
+
+    pos1Comments: IComment[];
+    pos2Comments: IComment[];
+    pos3Comments: IComment[];
+    pos4Comments: IComment[];
 }
 
 export interface ITemplateParam extends IInternalExpression {
     name: IIdentifier;
+
+    pos1Comments: IComment[];
+    pos2Comments: IComment[];
 }
 
 export interface IObjectCall extends IInternalExpression {
     blueprint: IIdentifier;
     args: IArgument[];
+
+    pos1Comments: IComment[];
+
+    separatorComments: SeparatorComments;
 }
 
 export interface IIndexAccess extends IInternalExpression {
     target: IExpression;
     index: IExpression;
+
+    pos1Comments: IComment[];
+    pos2Comments: IComment[];
 }
 
 export interface IMemberAccess extends IInternalExpression {
@@ -144,6 +223,9 @@ export interface IMemberAccess extends IInternalExpression {
 
 export interface IParenthesisExpr extends IInternalExpression {
     expr: IExpression;
+
+    pos1Comments: IComment[];
+    pos2Comments: IComment[];
 }
 
 export interface IReference extends ILeafExpression {
@@ -152,24 +234,42 @@ export interface IReference extends ILeafExpression {
 
 export interface IGuidCall extends ILeafExpression {
     uuid: string;
+
+    pos1Comments: IComment[];
+    pos2Comments: IComment[];
 }
 
 export interface IMapDef extends IInternalExpression {
     pairs: IPair[];
+
+    pos1Comments: IComment[];
+
+    separatorComments: SeparatorComments;
 }
 
 export interface IPair extends IInternalExpression {
     key: IExpression;
     value: IExpression;
+
+    pos1Comments: IComment[];
+    pos2Comments: IComment[];
+    pos3Comments: IComment[];
+    pos4Comments: IComment[];
 }
 
 export interface IVectorDef extends IInternalExpression {
     elements: IExpression[];
+
+    separatorComments: SeparatorComments;
 }
 
-export interface ITypeInitializer extends IInternalExpression {
-    name: ITypeRef;
+export interface ITypeConstructor extends IInternalExpression {
+    name: IIdentifier;
     args: IExpression[];
+
+    pos1Comments: IComment[];
+
+    separatorComments: SeparatorComments;
 }
 
 export interface IPropertyAssignExpr extends IInternalExpression {
@@ -183,6 +283,8 @@ export interface IArgument extends IInternalNode {
     value: Nullable<IExpression>;
     operator: Nullable<'=' | 'is'>;
     annotation: Nullable<ITypeRef>;
+
+    pos1Comments: IComment[];
 }
 
 export interface ILiteral extends ILeafExpression {

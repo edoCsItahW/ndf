@@ -47,13 +47,13 @@ import {
     TemplateDef,
     TemplateParam,
     TernaryExpr,
-    TypeInitializer,
+    TypeConstructor,
     TypeRef,
     UnaryExpr,
     UnnamedObj,
-    VectorDef, ErrorExpr, ASTWithBelong
+    VectorDef, ErrorExpr, ASTWithBelong, Comment, CommenComment, LibImportComment, FileImportComment
 } from "./ast";
-import { enumToStr, isHexDigit } from "../utils";
+import { enumToStr, isDigit, isHexDigit, isIdentifierChar } from "../utils";
 import { Locale } from "../IDEHelper";
 
 
@@ -68,47 +68,98 @@ function endPos(token: Token): IPos {
 }
 
 
-type _KWARGS = { firstStop?: boolean, skipNewline?: boolean, debug?: boolean };
+/**
+ * @type _KWARGS
+ * @property {boolean} [firstStop] 当遇到第一个令牌非预期是否立即停止解析
+ * @property {boolean} [skipNewline] 当遇到换行符时是否跳过
+ * @property {boolean} [debug] 是否输出调试信息
+ * */
+type _KWARGS = {
+    /** 当遇到第一个令牌非预期是否立即停止解析 */
+    firstStop?: boolean,
+    /** 当遇到换行符时是否跳过 */
+    skipNewline?: boolean,
+    /** 是否输出调试信息 */
+    debug?: boolean
+};
 
 
+/**
+ * @class Parser
+ * @summary 语法分析器
+ * @classDesc 语法分析器，通过递归下降分析法解析Token序列，生成AST。
+ * @see Token
+ * @see Program
+ * */
 export class Parser {
-    // 分隔符为换行符则子元素解析最后要skip,否则不能。
-    // 分隔符为换行符则while解析最后不能skip,否则需要。
-    // 可为空的容器在while前需要一次skip
+    /**
+     * @var idx
+     * @summary 当前Token索引
+     * @desc 当前Token索引，用于遍历Token序列。
+     * @private
+     * @remarks 一般情况下，不应该直接访问或修改此变量。
+     * */
     private idx: number = 0;
+
+    /**
+     * @var _errors
+     * @summary 错误列表
+     * @desc 错误列表，用于存储解析过程中出现的错误。
+     * @private
+     * @see NDFError
+     * */
     private _errors: NDFError[] = [];
 
-//    get idx(): number {
-//        return this._idx;
-//    }
-//
-//    set idx(value: number) {
-//        process.stdout.write(`set idx: ${value} now token: ${this.current?.toString()}, caller: `)
-//        try {
-//            throw new Error("set idx")
-//        }
-//        catch (e) {
-//            const stack = regexStack((e as Error).stack);
-//            console.log(stack.stack.map(s => s.func));
-//        }
-//        this._idx = value;
-//    }
-
+    /**
+     * @constructor
+     * @param tokens Token序列
+     * @param locale 语言环境
+     * @param debug 是否输出调试信息
+     * @param raise 是否抛出错误
+     * @remarks `debug`参数和`raise`不能同时为`true`.
+     * */
     constructor(private readonly tokens: Token[], private locale?: Locale, public debug: boolean = false, public raise: boolean = false) {
     }
 
+    /**
+     * @var current
+     * @summary 当前Token
+     * @desc 获取当前Token。
+     * @returns {Nullable<Token>} 当前Token，如果当前索引超出Token序列长度，则返回`undefined`。
+     * */
     get current(): Nullable<Token> {
         return this.tokens[this.idx];
     }
 
+    /**
+     * @var errors
+     * @summary 错误列表
+     * @desc 获取解析过程中出现的错误列表。
+     * @returns {NDFError[]} 错误列表。
+     * */
     get errors(): NDFError[] {
         return this._errors;
     }
 
+    /**
+     * @method localet
+     * @summary 语言环境
+     * @desc 获取语言环境。
+     * @returns {Nullable<PartialLocalet>} 如果有语言环境，则返回语言环境的格式化方法，否则返回`undefined`。
+     * @private
+     * */
     private get localet(): Nullable<PartialLocalet> {
         return this.locale?.t.bind(this.locale, "parser");
     }
 
+    /**
+     * @method parse
+     * @summary 解析Token序列
+     * @desc 解析Token序列，生成AST。
+     * @returns {Program} 解析结果，类型为`Program`。
+     * @private
+     * @see Program
+     * */
     @methodDebug(parseDebug, "parse")
     @traceback(true)
     parse(): Program {
@@ -125,6 +176,15 @@ export class Parser {
         return program;
     }
 
+    /**
+     * @method parseStatement
+     * @summary 解析语句
+     * @desc 由{@link parse}调用，解析语句。
+     * @returns {Nullable<Statement>} 解析结果，类型为`Statement`或`undefined`。
+     * @throws {_SyntaxError} 如果解析过程中出现错误，则抛出此错误。
+     * @private
+     * @see Statement
+     * */
     @methodDebug(parseDebug, "parse statement")
     @traceback()
     private parseStatement(): Nullable<Statement> {
@@ -163,6 +223,10 @@ export class Parser {
                 case TokenType.IDENTIFIER:
                     return this.parseAssignment();
 
+                case TokenType.COMMENT_LINE:
+                case TokenType.COMMENT_BLOCK:
+                    return this.parseComment();
+
                 case TokenType.EOF:
                     return undefined;
 
@@ -180,46 +244,71 @@ export class Parser {
                 throw e;
 
             this._errors.push(e instanceof NDFError ? e : new ParseError(
-                this.localet?.("NE2P4") || `Syntax analyzer internal error, error message: ${(e as Error).message}`,
-                this.current!.pos, endPos(this.current!))
+                    this.localet?.("NE2P4", (e as Error).message) || `Syntax analyzer internal error, error message: ${(e as Error).message}`,
+                    this.current?.pos || (this.tokens.length ? this.tokens[this.tokens.length - 1].pos : {
+                        line: 0,
+                        column: 0
+                    }),
+                    this.current ? endPos(this.current) : (this.tokens.length ? this.tokens[this.tokens.length - 1].pos : {
+                        line: 0,
+                        column: 0
+                    }))
             );
         }
     }
 
+    /**
+     * @method parseAssignment
+     * @summary 解析赋值语句
+     * @desc 由{@link parseStatement}调用，解析赋值语句。
+     * @param {Optional<TokenType>} [modifier] 赋值语句的修饰符，如`export`或`private`。
+     * @returns {Assignment} 解析结果，类型为`Assignment`。
+     * @private
+     * @see Assignment
+     * */
     @methodDebug(parseDebug, "parse assignment")
     @traceback()
     private parseAssignment(modifier?: Optional<TokenType>): Assignment {
         const assignment = new Assignment(this.current!.pos);
 
         if (modifier)
-            assignment.modifier = this.expect(modifier).type === TokenType.KW_EXPORT ? "export" : "private";
+            assignment.modifier = (assignment.marks.modifier = this.expect(modifier)).type === TokenType.KW_EXPORT ? "export" : "private";
 
         assignment.name = this.parseIdentifier(assignment);
 
-        this.expect(TokenType.KW_IS);
+        assignment.marks.is = this.expect(TokenType.KW_IS);
 
         assignment.value = this.parseExpression();
 
         return assignment;
     }
 
+    /**
+     * @method parseTemplateDef
+     * @summary 解析模板定义
+     * @desc 由{@link parseStatement}调用，解析模板定义。
+     * @param {Optional<TokenType>} [modifier] 模板定义的修饰符，如`private`。
+     * @returns {TemplateDef} 解析结果，类型为`TemplateDef`。
+     * @private
+     * @see TemplateDef
+     * */
     @methodDebug(parseDebug, "parse template def")
     @traceback()
     private parseTemplateDef(modifier?: Optional<TokenType>): TemplateDef {
         const templateDef = new TemplateDef(this.current!.pos);
 
         if (modifier)
-            templateDef.modifier = this.expect(modifier).type === TokenType.KW_PRIVATE ? "private" : undefined;
+            templateDef.modifier = (templateDef.marks.modifier = this.expect(modifier)).type === TokenType.KW_PRIVATE ? "private" : undefined;
 
-        this.expect(TokenType.KW_TEMPLATE);
+        templateDef.marks.template = this.expect(TokenType.KW_TEMPLATE);
 
         templateDef.name = this.parseIdentifier(templateDef);
 
-        this.skip();
+        templateDef.pos1Comments = this.extractComments();
 
         this.expect(TokenType.LBRACKET);
 
-        this.skip();
+        templateDef.separatorComments1.push(this.extractComments());
 
         while (this.inScope() && this.current?.type !== TokenType.RBRACKET) {  // 可留空参数
             const param = this.parseParameterDecl(templateDef);
@@ -227,7 +316,7 @@ export class Parser {
             if (param)
                 templateDef.params.push(param);
 
-            this.skip();
+            templateDef.separatorComments1.push(this.extractComments());
 
             // @ts-ignore
             if (this.current?.type === TokenType.RBRACKET)
@@ -236,22 +325,22 @@ export class Parser {
             else
                 this.expect(TokenType.COMMA);
 
-            this.skip();
+            templateDef.separatorComments1.push(this.extractComments());
         }
 
         this.expect(TokenType.RBRACKET);
 
-        this.skip();
+        templateDef.pos2Comments = this.extractComments();
 
-        this.expect(TokenType.KW_IS);
+        templateDef.marks.is = this.expect(TokenType.KW_IS);
 
         templateDef.extend = this.parseIdentifier();
 
-        this.skip();
+        templateDef.pos3Comments = this.extractComments();
 
         this.expect(TokenType.LPAREN);
 
-        this.skip();
+        templateDef.separatorComments2.push(this.extractComments());
 
         while (this.inScope() && this.current?.type !== TokenType.RPAREN) {  // 可留空成员
             const member = this.parseMemberAssign(templateDef);
@@ -259,13 +348,13 @@ export class Parser {
             if (member)
                 templateDef.members.push(member);
 
-            this.skip();
+            templateDef.separatorComments2.push(this.extractComments());
 
             // @ts-ignore
             if (this.current?.type === TokenType.RPAREN)
                 break;
 
-            this.skip();
+            templateDef.separatorComments2.push(this.extractComments());
         }
 
         this.expect(TokenType.RPAREN);
@@ -273,6 +362,14 @@ export class Parser {
         return templateDef;
     }
 
+    /**
+     * @method parseUnnamedObj
+     * @summary 解析匿名对象
+     * @desc 由{@link parseStatement}调用，解析匿名对象。
+     * @returns {UnnamedObj} 解析结果，类型为`UnnamedObj`。
+     * @private
+     * @see UnnamedObj
+     * */
     @methodDebug(parseDebug, "parse unnamed obj")
     @traceback()
     private parseUnnamedObj(): UnnamedObj {
@@ -282,11 +379,11 @@ export class Parser {
 
         unnamedObj.blueprint = this.parseIdentifier();
 
-        this.skip();
+        unnamedObj.pos1Comments = this.extractComments();
 
         this.expect(TokenType.LPAREN);
 
-        this.skip();
+        unnamedObj.separatorComments.push(this.extractComments());
 
         while (this.inScope() && this.current?.type !== TokenType.RPAREN) {
             const member = this.parseArgument(unnamedObj);
@@ -294,13 +391,13 @@ export class Parser {
             if (member)
                 unnamedObj.args.push(member);
 
-            this.skip();
+            unnamedObj.separatorComments.push(this.extractComments());
 
             // @ts-ignore
             if (this.current?.type === TokenType.RPAREN)
                 break;
 
-            this.skip();
+            unnamedObj.separatorComments.push(this.extractComments());
         }
 
         this.expect(TokenType.RPAREN);
@@ -308,6 +405,68 @@ export class Parser {
         return unnamedObj;
     }
 
+    /**
+     * @method parseComment
+     * @summary 解析注释
+     * @desc 由{@link parseStatement}调用，解析注释。
+     * @returns {Comment} 解析结果，类型为`Comment`。
+     * @private
+     * @remarks 采用正则表达式并尝试解析,如果不符合规范则返回普通注释。
+     * @see Comment
+     * */
+    @methodDebug(parseDebug, "parse comment")
+    @traceback()
+    private parseComment(): Comment {
+        const comment = new CommenComment(this.current!.pos, this.current!.value);
+
+        if (this.current!.value.startsWith("///")) {
+            const text = this.current!.value.slice(3);
+
+            const fileIptPattern = /^\s*from\s*(['"])(.*?)\1\s*import\s*([^,]+(?:,\s*[^,]+)*)/;
+            const libIptPattern = /^\s*import\s*([^,]+(?:,\s*[^,]+)*)/;
+
+            if (fileIptPattern.test(text)) {
+                const [, quote, file, imports] = text.match(fileIptPattern)!;
+
+                const fileIptComment = new FileImportComment(this.advance()!.pos);
+
+                fileIptComment.path = file;
+                fileIptComment.items = imports.split(",").map(item => item.trim()).filter(i => i.length);
+
+                if (!fileIptComment.items.length)
+                    return comment;
+
+                return fileIptComment;
+            }
+
+            else if (libIptPattern.test(text)) {
+                const [, imports] = text.match(libIptPattern)!;
+
+                const libIptComment = new LibImportComment(this.advance()!.pos);
+
+                libIptComment.items = imports.split(",").map(item => item.trim()).filter(i => i.length);
+
+                if (!libIptComment.items.length)
+                    return comment;
+
+                return libIptComment;
+            }
+        }
+
+        this.advance();
+
+        return comment;
+    }
+
+    /**
+     * @method parseParameterDecl
+     * @summary 解析参数声明
+     * @desc 由{@link parseTemplateDef}调用，解析参数声明。
+     * @param {TemplateDef} belong 所属模板定义。
+     * @returns {ParameterDecl} 解析结果，类型为`ParameterDecl`。
+     * @private
+     * @see ParameterDecl
+     * */
     @methodDebug(parseDebug, "parse parameter decl")
     @traceback()
     private parseParameterDecl(belong: TemplateDef): ParameterDecl {
@@ -327,11 +486,20 @@ export class Parser {
             parameterDecl.default = this.parseExpression();
         }
 
-        this.skip();
+        parameterDecl.pos1Comments = this.extractComments();
 
         return parameterDecl;
     }
 
+    /**
+     * @method parseMemberAssign
+     * @summary 解析成员赋值
+     * @desc 由{@link parseTemplateDef}调用，解析成员赋值。
+     * @param {TemplateDef} belong 所属模板定义。
+     * @returns {MemberAssign} 解析结果，类型为`MemberAssign`。
+     * @private
+     * @see MemberAssign
+     * */
     @methodDebug(parseDebug, "parse member assign")
     @traceback()
     private parseMemberAssign(belong: TemplateDef): MemberAssign {
@@ -341,13 +509,24 @@ export class Parser {
 
         memberAssign.name = this.parseIdentifier(memberAssign);
 
-        memberAssign.operator = this.expect([TokenType.ASSIGN, TokenType.KW_IS]).type === TokenType.KW_IS ? "is" : "=";
+        memberAssign.operator = (memberAssign.marks.operator = this.expect([TokenType.ASSIGN, TokenType.KW_IS])).type === TokenType.KW_IS ? "is" : "=";
+
+        memberAssign.pos1Comments = this.extractComments();
 
         memberAssign.value = this.parseExpression();
 
         return memberAssign;
     }
 
+    /**
+     * @method parseTypeRef
+     * @summary 解析类型引用
+     * @desc 由{@link parseParameterDecl}或{@link parseMemberAssign}调用，解析类型引用。
+     * @returns {TypeRef} 解析结果，类型为`TypeRef`。
+     * @throws {_SyntaxError} 如果遇到非预期的Token，则抛出此错误。
+     * @private
+     * @see TypeRef
+     * */
     @methodDebug(parseDebug, "parse type ref")
     @traceback()
     private parseTypeRef(): TypeRef {
@@ -377,6 +556,14 @@ export class Parser {
         }
     }
 
+    /**
+     * @method parseGenericType
+     * @summary 解析泛型类型
+     * @desc 由{@link parseTypeRef}调用，解析泛型类型。
+     * @returns {GenericType} 解析结果，类型为`GenericType`。
+     * @private
+     * @see GenericType
+     * */
     @methodDebug(parseDebug, "parse generic type")
     @traceback()
     private parseGenericType(): GenericType {
@@ -388,16 +575,16 @@ export class Parser {
         } else
             genericType.name = this.parseIdentifier();
 
-        this.skip();
+        genericType.pos1Comments = this.extractComments();
 
         this.expect(TokenType.LT);
 
-        this.skip();
+        genericType.separatorComments.push(this.extractComments());
 
         while (this.inScope() && this.current?.type !== TokenType.GT) {  // 不可留空参数
             genericType.typeParams.push(this.parseTypeRef());
 
-            this.skip();
+            genericType.separatorComments.push(this.extractComments());
 
             // @ts-ignore
             if (this.current?.type === TokenType.GT)
@@ -406,7 +593,7 @@ export class Parser {
             else
                 this.expect(TokenType.COMMA);
 
-            this.skip();
+            genericType.separatorComments.push(this.extractComments());
         }
 
         this.expect(TokenType.GT);
@@ -416,6 +603,14 @@ export class Parser {
 
     // 开始消除左递归形式的表达式解析
 
+    /**
+     * @method parseExpression
+     * @summary 解析表达式
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @throws {_SyntaxError} 如果解析过程中出现错误，则抛出此错误。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse expression")
     @traceback(true)
     private parseExpression(): Expression {
@@ -427,10 +622,10 @@ export class Parser {
             if (this.raise)
                 throw e;
 
-            this._errors.push( e instanceof NDFError ? e : new ParseError(
-                this.localet?.("NE2P4", (e as Error).message)
-                || `Syntax analyzer internal error, error message: ${(e as Error).message}`,
-                this.current!.pos, endPos(this.current!)
+            this._errors.push(e instanceof NDFError ? e : new ParseError(
+                    this.localet?.("NE2P4", (e as Error).message)
+                    || `Syntax analyzer internal error, error message: ${(e as Error).message}`,
+                    this.current!.pos, endPos(this.current!)
                 )
             );
 
@@ -438,13 +633,30 @@ export class Parser {
         }
     }
 
+    /**
+     * @method parseTernaryExpr
+     * @summary 解析三元表达式
+     * @desc 由{@link parseExpression}调用，解析三元表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse ternary expr")
     @traceback()
     private parseTernaryExpr(): Expression {
         return this.parseLogicalOrExprWithTernary();
     }
 
+    /**
+     * @method parseLogicalOrExprWithTernary
+     * @summary 解析逻辑或表达式（带三元表达式）
+     * @desc 由{@link parseTernaryExpr}调用，解析逻辑或表达式（带三元表达式）。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse logical or expr with ternary")
+    @traceback()
     private parseLogicalOrExprWithTernary(): Expression {
         const condition = this.parseLogicalOrExpr();
 
@@ -456,31 +668,48 @@ export class Parser {
         return condition;
     }
 
+    /**
+     * @method parseFullTernary
+     * @summary 解析完整的三元表达式
+     * @desc 由{@link parseLogicalOrExprWithTernary}调用，解析完整的三元表达式。
+     * @param {Expression} condition 条件表达式。
+     * @returns {TernaryExpr} 解析结果，类型为`TernaryExpr`。
+     * @private
+     * @see TernaryExpr
+     * */
     @methodDebug(parseDebug, "parse full ternary")
     @traceback()
     private parseFullTernary(condition: Expression): TernaryExpr {
         const ternary = new TernaryExpr(this.current!.pos);
         ternary.condition = condition;
 
-        this.skip();
+        ternary.pos1Comments = this.extractComments();
 
         this.expect(TokenType.QUESTION);
 
-        this.skip();
+        ternary.pos2Comments = this.extractComments();
 
         ternary.trueExpr = this.parseExpression(); // 允许嵌套表达式
 
-        this.skip();
+        ternary.pos3Comments = this.extractComments();
 
         this.expect(TokenType.COLON);
 
-        this.skip();
+        ternary.pos4Comments = this.extractComments();
 
         ternary.falseExpr = this.parseTernaryExpr(); // 右结合性
 
         return ternary;
     }
 
+    /**
+     * @method parseLogicalOrExpr
+     * @summary 解析逻辑或表达式
+     * @desc 由{@link parseLogicalOrExprWithTernary}调用，解析逻辑或表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse logical or expr")
     @traceback()
     private parseLogicalOrExpr(): Expression {
@@ -489,15 +718,13 @@ export class Parser {
         // this.skip();  // while将会处理,且上级表达式已skip,无需skip
 
         while (this.inScope() && this.current?.type === TokenType.BIN_OR) {
-            const pos = this.current!.pos;
+            const binaryExpr = new BinaryExpr(this.current!.pos);
 
             this.advance();
 
-            this.skip();
+            binaryExpr.pos1Comments = this.extractComments();
 
             const right = this.parseLogicalAndExpr();
-
-            const binaryExpr = new BinaryExpr(pos);
 
             binaryExpr.left = expr;
             binaryExpr.operator = "|";
@@ -509,6 +736,14 @@ export class Parser {
         return expr;
     }
 
+    /**
+     * @method parseLogicalAndExpr
+     * @summary 解析逻辑与表达式
+     * @desc 由{@link parseLogicalOrExpr}调用，解析逻辑与表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse logical and expr")
     @traceback()
     private parseLogicalAndExpr(): Expression {
@@ -517,15 +752,13 @@ export class Parser {
         // this.skip();  // while将会处理,且上级表达式已skip,无需skip
 
         while (this.inScope() && this.current?.type === TokenType.BIN_AND) {
-            const pos = this.current!.pos;
+            const binaryExpr = new BinaryExpr(this.current!.pos);
 
             this.advance();
 
-            this.skip();
+            binaryExpr.pos1Comments = this.extractComments();
 
             const right = this.parseEqualityExpr();
-
-            const binaryExpr = new BinaryExpr(pos);
 
             binaryExpr.left = expr;
             binaryExpr.operator = "&";
@@ -537,6 +770,14 @@ export class Parser {
         return expr;
     }
 
+    /**
+     * @method parseEqualityExpr
+     * @summary 解析相等表达式
+     * @desc 由{@link parseLogicalAndExpr}调用，解析相等表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse equality expr")
     @traceback()
     private parseEqualityExpr(): Expression {
@@ -545,15 +786,13 @@ export class Parser {
         // this.skip();  // while将会处理,且上级表达式已skip,无需skip
 
         while (this.inScope() && this.current?.type === TokenType.EQ || this.current?.type === TokenType.NE) {
-            const pos = this.current!.pos;
+            const binaryExpr = new BinaryExpr(this.current!.pos);
 
             const operator = this.advance()?.type === TokenType.EQ ? "==" : "!=";
 
-            this.skip();
+            binaryExpr.pos1Comments = this.extractComments();
 
             const right = this.parseRelationalExpr();
-
-            const binaryExpr = new BinaryExpr(pos);
 
             binaryExpr.left = expr;
             binaryExpr.operator = operator;
@@ -565,6 +804,14 @@ export class Parser {
         return expr;
     }
 
+    /**
+     * @method parseRelationalExpr
+     * @summary 解析关系表达式
+     * @desc 由{@link parseEqualityExpr}调用，解析关系表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse relational expr")
     @traceback()
     private parseRelationalExpr(): Expression {
@@ -577,15 +824,13 @@ export class Parser {
             && this.current
             && [TokenType.LT, TokenType.GT, TokenType.LE, TokenType.GE].includes(this.current!.type)
             ) {
-            const pos = this.current.pos;
+            const binaryExpr = new BinaryExpr(this.current.pos);
 
             const operator = INVERSE_OPERATORS.get(this.advance()!.type)!;
 
-            this.skip();
+            binaryExpr.pos1Comments = this.extractComments();
 
             const right = this.parseAdditiveExpr();
-
-            const binaryExpr = new BinaryExpr(pos);
 
             binaryExpr.left = expr;
             binaryExpr.operator = operator as BinaryOperator;
@@ -597,6 +842,14 @@ export class Parser {
         return expr;
     }
 
+    /**
+     * @method parseAdditiveExpr
+     * @summary 解析加法表达式
+     * @desc 由{@link parseRelationalExpr}调用，解析加法表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse additive expr")
     @traceback()
     private parseAdditiveExpr(): Expression {
@@ -605,15 +858,13 @@ export class Parser {
         this.skip();
 
         while (this.inScope() && this.current && [TokenType.ADD, TokenType.SUB].includes(this.current!.type)) {
-            const pos = this.current.pos;
+            const binaryExpr = new BinaryExpr(this.current.pos);
 
             const operator = this.advance()!.type === TokenType.ADD ? "+" : "-";
 
-            this.skip();
+            binaryExpr.pos1Comments = this.extractComments();
 
             const right = this.parseMultiplicativeExpr();
-
-            const binaryExpr = new BinaryExpr(pos);
 
             binaryExpr.left = expr;
             binaryExpr.operator = operator;
@@ -625,6 +876,14 @@ export class Parser {
         return expr;
     }
 
+    /**
+     * @method parseMultiplicativeExpr
+     * @summary 解析乘法表达式
+     * @desc 由{@link parseAdditiveExpr}调用，解析乘法表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse multiplicative expr")
     @traceback()
     private parseMultiplicativeExpr(): Expression {
@@ -637,15 +896,13 @@ export class Parser {
             && this.current
             && [TokenType.MUL, TokenType.KW_DIV, TokenType.MOD].includes(this.current!.type)
             ) {
-            const pos = this.current.pos;
+            const binaryExpr = new BinaryExpr(this.current.pos);
 
             const operator = INVERSE_OPERATORS.get(this.advance()!.type)!;
 
-            this.skip();
+            binaryExpr.pos1Comments = this.extractComments();
 
             const right = this.parseUnaryExpr();
-
-            const binaryExpr = new BinaryExpr(pos);
 
             binaryExpr.left = expr;
             binaryExpr.operator = operator as BinaryOperator;
@@ -657,6 +914,14 @@ export class Parser {
         return expr;
     }
 
+    /**
+     * @method parseUnaryExpr
+     * @summary 解析一元表达式
+     * @desc 由{@link parseMultiplicativeExpr}调用，解析一元表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse unary expr")
     @traceback()
     private parseUnaryExpr(): Expression {
@@ -667,8 +932,6 @@ export class Parser {
 
             unaryExpr.operator = this.advance()!.type === TokenType.SUB ? "-" : "!";
 
-            this.skip();
-
             unaryExpr.operand = this.parseUnaryExpr();
 
             return unaryExpr;
@@ -677,6 +940,14 @@ export class Parser {
         return this.parsePostfixExpr();
     }
 
+    /**
+     * @method parsePostfixExpr
+     * @summary 解析后缀表达式
+     * @desc 由{@link parseUnaryExpr}调用，解析后缀表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse postfix expr")
     @traceback()
     private parsePostfixExpr(): Expression {
@@ -698,7 +969,7 @@ export class Parser {
                     expr = this.parseIndexAccess(expr);
                     break;
                 case TokenType.DIV:
-                    expr = this.parsePathAccess(expr);
+                    expr = this.parseMemberAccess(expr);
                     break;
                 default:
                     return expr;
@@ -708,6 +979,15 @@ export class Parser {
         return expr;
     }
 
+    /**
+     * @method parseObjectCall
+     * @summary 解析对象调用
+     * @desc 由{@link parsePostfixExpr}调用，解析对象调用。
+     * @param {Expression} expr 对象表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse object call")
     @traceback()
     private parseObjectCall(expr: Expression): Expression {
@@ -715,9 +995,11 @@ export class Parser {
 
         objectCall.blueprint = expr as Identifier;
 
+        objectCall.pos1Comments = this.extractComments();
+
         this.expect(TokenType.LPAREN);
 
-        this.skip();
+        objectCall.separatorComments.push(this.extractComments());
 
         while (this.inScope() && this.current?.type !== TokenType.RPAREN) {
             const arg = this.parseArgument(objectCall);
@@ -725,13 +1007,13 @@ export class Parser {
             if (arg)
                 objectCall.args.push(arg);
 
-            this.skip();
+            objectCall.separatorComments.push(this.extractComments());
 
             // @ts-ignore
             if (this.current?.type === TokenType.RPAREN)
                 break;
 
-            this.skip();
+            objectCall.separatorComments.push(this.extractComments());
         }
 
         this.expect(TokenType.RPAREN);
@@ -739,6 +1021,15 @@ export class Parser {
         return objectCall;
     }
 
+    /**
+     * @method parseIndexAccess
+     * @summary 解析索引访问
+     * @desc 由{@link parsePostfixExpr}调用，解析索引访问。
+     * @param {Expression} expr 索引表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse index access")
     @traceback()
     private parseIndexAccess(expr: Expression): Expression {
@@ -748,25 +1039,32 @@ export class Parser {
 
         this.expect(TokenType.LBRACKET);
 
-        this.skip();
+        indexAccess.pos1Comments = this.extractComments();
 
         indexAccess.index = this.parseExpression();
 
-        this.skip();
+        indexAccess.pos2Comments = this.extractComments();
 
         this.expect(TokenType.RBRACKET);
 
         return indexAccess;
     }
 
+    /**
+     * @method parseMemberAccess
+     * @summary 解析成员访问
+     * @desc 由{@link parsePostfixExpr}调用，解析成员访问。
+     * @param {Expression} expr 成员表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse path access")
     @traceback()
-    private parsePathAccess(expr: Expression): Expression {
+    private parseMemberAccess(expr: Expression): Expression {
         const pathAccess = new MemberAccess(this.current!.pos);
 
         this.expect(TokenType.DIV);
-
-        this.skip();
 
         pathAccess.target = expr;
         pathAccess.property = this.parseIdentifier();
@@ -774,6 +1072,15 @@ export class Parser {
         return pathAccess;
     }
 
+    /**
+     * @method parsePrimaryExpr
+     * @summary 解析基础表达式
+     * @desc 由{@link parsePostfixExpr}调用，解析基础表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @throws {_SyntaxError} 如果遇到非预期的表达式，则抛出异常。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse primary expr")
     @traceback()
     private parsePrimaryExpr(): Expression {
@@ -807,19 +1114,34 @@ export class Parser {
                 else if (this.peek()?.type === TokenType.LPAREN)
                     return this.parseObjectCall(this.parseIdentifier());
 
-                return this.tryParseTypeInitializer() || this.parseIdentifier();
+                const expr = this.tryParseTypeConstructor();
+
+                if (expr)
+                    return expr;
+                else if (this.peek()?.type === TokenType.KW_IS)
+                    return this.parsePropertyAssignExpr();
+
+                return this.parseIdentifier();
 
             default:
                 if (this.current!.category === TokenCategory.LITERAL || this.current!.category === TokenCategory.KEYWORD)
                     return this.parseLiteral();
 
                 throw new _SyntaxError(this.localet?.("NE2P6", enumToStr(TokenType, this.current!.type))
-                    || `Unexpected **expression** starting token \`${enumToStr(TokenType, this.current!.type)}\``,
+                    || `Unexpected **expression** starting token \`${enumToStr(TokenType, this.current!.type) + " " + this.current!.toString()}\``,
                     this.current!.pos, endPos(this.advance()!)
                 );
         }
     }
 
+    /**
+     * @method parseReference
+     * @summary 解析引用表达式
+     * @desc 由{@link parsePrimaryExpr}调用，解析引用表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse reference")
     @traceback()
     private parseReference(): Expression {
@@ -830,6 +1152,14 @@ export class Parser {
         return reference;
     }
 
+    /**
+     * @method parseTemplateParam
+     * @summary 解析模板参数表达式
+     * @desc 由{@link parsePrimaryExpr}调用，解析模板参数表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse template param")
     @traceback()
     private parseTemplateParam(): Expression {
@@ -837,17 +1167,25 @@ export class Parser {
 
         this.expect(TokenType.LT);
 
-        this.skip();
+        templateParam.pos1Comments = this.extractComments();
 
         templateParam.name = this.parseIdentifier();
 
-        this.skip();
+        templateParam.pos2Comments = this.extractComments();
 
         this.expect(TokenType.GT);
 
         return templateParam;
     }
 
+    /**
+     * @method parseMapDef
+     * @summary 解析映射定义
+     * @desc 由{@link parsePrimaryExpr}调用，解析映射定义。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse map def")
     @traceback()
     private parseMapDef(): Expression {
@@ -855,11 +1193,11 @@ export class Parser {
 
         this.expect(TokenType.KW_MAP);
 
-        this.skip();
+        mapDef.pos1Comments = this.extractComments();
 
         this.expect(TokenType.LBRACKET);
 
-        this.skip();
+        mapDef.separatorComments.push(this.extractComments());
 
         while (this.inScope() && this.current?.type !== TokenType.RBRACKET) {
             const pair = this.parsePair();
@@ -867,7 +1205,7 @@ export class Parser {
             if (pair)
                 mapDef.pairs.push(pair);
 
-            this.skip();
+            mapDef.separatorComments.push(this.extractComments());
 
             // @ts-ignore
             if (this.current?.type === TokenType.RBRACKET)
@@ -876,7 +1214,7 @@ export class Parser {
             else
                 this.expect(TokenType.COMMA);
 
-            this.skip();
+            mapDef.separatorComments.push(this.extractComments());
         }
 
         this.expect(TokenType.RBRACKET);
@@ -884,6 +1222,13 @@ export class Parser {
         return mapDef;
     }
 
+    /**
+     * @method isPairStart
+     * @summary 判断是否为键值对开始
+     * @desc 由{@link parseMapDef}调用，判断是否为键值对开始。
+     * @returns {boolean} 是否为键值对开始。
+     * @private
+     * */
     private isPairStart(): boolean {
         const saveIdx = this.idx; // 保存当前解析位置
         let isPair = false;
@@ -903,6 +1248,14 @@ export class Parser {
         return isPair;
     }
 
+    /**
+     * @method parsePair
+     * @summary 解析键值对
+     * @desc 由{@link parseMapDef}调用，解析键值对。
+     * @returns {Pair} 解析结果，类型为`Pair`。
+     * @private
+     * @see Pair
+     * */
     @methodDebug(parseDebug, "parse pair")
     @traceback()
     private parsePair(): Pair {
@@ -910,25 +1263,33 @@ export class Parser {
 
         this.expect(TokenType.LPAREN);
 
-        this.skip();
+        pair.pos1Comments = this.extractComments();
 
         pair.key = this.parseExpression();
 
-        this.skip();
+        pair.pos2Comments = this.extractComments();
 
         this.expect(TokenType.COMMA);
 
-        this.skip();
+        pair.pos3Comments = this.extractComments();
 
         pair.value = this.parseExpression();
 
-        this.skip();
+        pair.pos4Comments = this.extractComments();
 
         this.expect(TokenType.RPAREN);
 
         return pair;
     }
 
+    /**
+     * @method parseVectorDef
+     * @summary 解析向量定义
+     * @desc 由{@link parsePrimaryExpr}调用，解析向量定义。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse vector def")
     @traceback()
     private parseVectorDef(): Expression {
@@ -936,7 +1297,7 @@ export class Parser {
 
         this.expect(TokenType.LBRACKET);
 
-        this.skip();
+        vectorDef.separatorComments.push(this.extractComments());
 
         while (this.inScope() && this.current?.type !== TokenType.RBRACKET) {
             const element = this.parseExpression();
@@ -944,7 +1305,7 @@ export class Parser {
             if (element)
                 vectorDef.elements.push(element);
 
-            this.skip();
+            vectorDef.separatorComments.push(this.extractComments());
 
             // @ts-ignore
             if (this.current?.type === TokenType.RBRACKET)
@@ -953,7 +1314,7 @@ export class Parser {
             else
                 this.expect(TokenType.COMMA);
 
-            this.skip();
+            vectorDef.separatorComments.push(this.extractComments());
         }
 
         this.expect(TokenType.RBRACKET);
@@ -961,31 +1322,47 @@ export class Parser {
         return vectorDef;
     }
 
-    private tryParseTypeInitializer(): Nullable<Expression> {
+    /**
+     * @method tryParseTypeConstructor
+     * @summary 尝试解析类型构造器
+     * @desc 由{@link parsePrimaryExpr}调用，尝试解析类型构造器。
+     * @returns {Nullable<Expression>} 解析结果，类型为`Nullable<Expression>`。
+     * */
+    private tryParseTypeConstructor(): Nullable<Expression> {
         if (this.peek()?.type === TokenType.LBRACKET) {
             const typeName = this.parseIdentifier();
 
             this.advance(); // 吃掉 LBRACKET
 
-            this.skip();
+            const comments = this.extractComments();
 
-            return this.parseTypeInitializer(typeName);
+            return this.parseTypeConstructor(typeName, comments);
         }
     }
 
+    /**
+     * @method parseTypeConstructor
+     * @summary 解析类型构造器
+     * @desc 由{@link tryParseTypeConstructor}调用，解析类型构造器。
+     * @param {Identifier} typeName 类型名称。
+     * @param {Comment[]} comments 注释。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * */
     @methodDebug(parseDebug, "parse type initializer")
     @traceback()
-    private parseTypeInitializer(typeName: Identifier): Expression {
-        const typeInitializer = new TypeInitializer(this.current!.pos);
+    private parseTypeConstructor(typeName: Identifier, comments: Comment[]): Expression {
+        const typeConstructor = new TypeConstructor(this.current!.pos);
 
-        typeInitializer.name = typeName;
+        typeConstructor.name = typeName;
 
 //        this.expect(TokenType);  // 在tryParseTypeInitializer中已经吃掉了LBRACKET
 
-        while (this.inScope() && this.current?.type !== TokenType.RBRACKET) {
-            typeInitializer.args.push(this.parseExpression());
+        typeConstructor.pos1Comments = comments;
 
-            this.skip();
+        while (this.inScope() && this.current?.type !== TokenType.RBRACKET) {
+            typeConstructor.args.push(this.parseExpression());
+
+            typeConstructor.separatorComments.push(this.extractComments());
 
             // @ts-ignore
             if (this.current?.type === TokenType.RBRACKET)
@@ -994,14 +1371,23 @@ export class Parser {
             else
                 this.expect(TokenType.COMMA);
 
-            this.skip();
+            typeConstructor.separatorComments.push(this.extractComments());
         }
 
         this.expect(TokenType.RBRACKET);
 
-        return typeInitializer;
+        return typeConstructor;
     }
 
+    /**
+     * @method parsePropertyAssignExpr
+     * @summary 解析属性赋值表达式
+     * @desc 由{@link parsePrimaryExpr}调用，解析属性赋值表达式。
+     * @param {Optional<TokenType>} [modifier] 修饰符。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse property assign expr")
     @traceback()
     private parsePropertyAssignExpr(modifier?: Optional<TokenType>): Expression {
@@ -1019,6 +1405,14 @@ export class Parser {
         return propertyAssignExpr;
     }
 
+    /**
+     * @method parseParenthesisExpr
+     * @summary 解析括号表达式
+     * @desc 由{@link parsePrimaryExpr}调用，解析括号表达式。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse parenthesis expr")
     @traceback()
     private parseParenthesisExpr(): Expression {
@@ -1026,17 +1420,23 @@ export class Parser {
 
         this.expect(TokenType.LPAREN);
 
-        this.skip();
+        parenthesisExpr.pos1Comments = this.extractComments();
 
         parenthesisExpr.expr = this.parseExpression();
 
-        this.skip();
+        parenthesisExpr.pos2Comments = this.extractComments();
 
         this.expect(TokenType.RPAREN);
 
         return parenthesisExpr;
     }
 
+    /**
+     * @method isGuidCallStart
+     * @summary 判断是否为GUID调用开始
+     * @desc 由{@link parsePrimaryExpr}调用，判断是否为GUID调用开始。
+     * @returns {boolean} 是否为GUID调用开始。
+     * */
     private isGuidCallStart(): boolean {
         if (this.current!.value.toLowerCase() !== "guid")
             return false;
@@ -1044,6 +1444,15 @@ export class Parser {
         return this.peek()?.type === TokenType.COLON && this.peek(2)?.type === TokenType.LBRACE;
     }
 
+    /**
+     * @method parseGuidCall
+     * @summary 解析GUID调用
+     * @desc 由{@link parsePrimaryExpr}调用，解析GUID调用。
+     * @returns {Expression} 解析结果，类型为`Expression`。
+     * @throws {ParseError} 如果遇到非法的GUID格式，则抛出异常。
+     * @private
+     * @see Expression
+     * */
     @methodDebug(parseDebug, "parse guid call")
     @traceback()
     private parseGuidCall(): Expression {
@@ -1055,7 +1464,7 @@ export class Parser {
 
         this.expect(TokenType.LBRACE);
 
-        this.skip();
+        guidCall.pos1Comments = this.extractComments();
 
         let idx: number = 0;
         const tmp: number[] = [8, 4, 4, 4, 12];
@@ -1086,13 +1495,22 @@ export class Parser {
             }
         }
 
-        this.skip();
+        guidCall.pos2Comments = this.extractComments();
 
         this.expect(TokenType.RBRACE);
 
         return guidCall;
     }
 
+    /**
+     * @method parseIdentifier
+     * @summary 解析标识符
+     * @desc 由{@link parsePrimaryExpr}调用，解析标识符。
+     * @param {ASTWithBelong} [belong] 所属语法节点。
+     * @returns {Identifier} 解析结果，类型为`Identifier`。
+     * @private
+     * @see Identifier
+     * */
     @methodDebug(parseDebug, "parse identifier")
     @traceback()
     private parseIdentifier(belong?: ASTWithBelong): Identifier {
@@ -1103,10 +1521,20 @@ export class Parser {
         return identifier;
     }
 
+    /**
+     * @method parseArgument
+     * @summary 解析参数
+     * @desc 由{@link parseObjectCall}调用，解析参数。
+     * @param {ObjectCall | UnnamedObj} belong 所属语法节点。
+     * @returns {Argument} 解析结果，类型为`Argument`。
+     * @throws {ParseError} 如果参数语法错误，则抛出异常。
+     * @private
+     * @see Argument
+     * */
     @methodDebug(parseDebug, "parse argument")
     @traceback()
     private parseArgument(belong: ObjectCall | UnnamedObj): Argument {
-        let haveOne: boolean = false;
+        let haveOne: boolean = false;  // 至少进行类型注解或赋值其中一项
         const argument = new Argument(this.current!.pos, belong);
 
         if (this.inScope() && this.current?.type === TokenType.KW_EXPORT)
@@ -1126,6 +1554,8 @@ export class Parser {
 
             this.advance();
 
+            argument.pos1Comments = this.extractComments();
+
             argument.value = this.parseExpression();
 
             haveOne = true;
@@ -1141,6 +1571,15 @@ export class Parser {
         return argument;
     }
 
+    /**
+     * @method parseLiteral
+     * @summary 解析字面量
+     * @desc 由{@link parsePrimaryExpr}调用，解析字面量。
+     * @returns {Literal} 解析结果，类型为`Literal`。
+     * @throws {_SyntaxError} 如果遇到非预期的字面量，则抛出异常。
+     * @private
+     * @see Literal
+     * */
     @methodDebug(parseDebug, "parse literal")
     @traceback()
     private parseLiteral(): Literal {
@@ -1170,29 +1609,64 @@ export class Parser {
         }
     }
 
+    /**
+     * @method inScope
+     * @summary 当前位置是否在有效范围内
+     * @desc 当{@link idx}在令牌序列范围内，且当前令牌不为EOF时，返回true。
+     * @returns {boolean} 是否在有效范围内。
+     * @private
+     * */
     private inScope(): boolean {
         return this.idx < this.tokens.length && this.current?.type !== TokenType.EOF;
     }
 
+    /**
+     * @method skip
+     * @summary 跳过空白符
+     * @desc 跳过当前位置的空白符，包括空格、制表符、换行符。
+     * @private
+     * */
     private skip() {
-        while (this.inScope()
-        && (
-            this.current?.type === TokenType.NEWLINE
-            || this.current?.category === TokenCategory.COMMENT)
-        )
+        while (this.inScope() && this.current?.type === TokenType.NEWLINE)
             this.idx++;
     }
 
+    /**
+     * @method peek
+     * @summary 预读下一个令牌
+     * @desc 预读下一个令牌，不移动当前位置。
+     * @param {number} [n=1] 预读的数量。
+     * @returns {Nullable<Token>} 预读的令牌，如果没有更多令牌，返回`undefined`。
+     * @private
+     * */
     private peek(n: number = 1): Nullable<Token> {
         return this.tokens[this.idx + n];
     }
 
+    /**
+     * @method advance
+     * @summary 移动当前位置
+     * @desc 移动当前位置到下一个令牌，并返回当前令牌。
+     * @param {number} [n=1] 移动的数量。
+     * @returns {Nullable<Token>} 当前令牌，如果没有更多令牌，返回`undefined`。
+     * @private
+     * */
     private advance(n: number = 1): Nullable<Token> {
         const tk = this.current;
         this.idx += n;
         return tk;
     }
 
+    /**
+     * @method expect
+     * @summary 期望下一个令牌
+     * @desc 期望下一个令牌的类型，如果类型匹配，移动当前位置并返回当前令牌。
+     * @param {TokenType | TokenType[]} types 期望的令牌类型。
+     * @param {boolean} [skipNewline=false] 是否跳过空白符。
+     * @returns {Token} 当前令牌。
+     * @private
+     * @throws {_SyntaxError} 如果期望的令牌类型不匹配，抛出语法错误。
+     * */
     private expect(types: TokenType[], skipNewline?: boolean): Token;
     private expect(type: TokenType, skipNewline?: boolean): Token;
     private expect(typeOrTypes: TokenType | TokenType[], skipNewline: boolean = false): Token {
@@ -1217,6 +1691,18 @@ export class Parser {
         );
     }
 
+    /**
+     * @method find
+     * @summary 查找令牌
+     * @desc 查找从当前位置到指定位置的令牌，返回第一个匹配的令牌。
+     * @param {number} _start 开始位置。
+     * @param {number} _end 结束位置。
+     * @param {TokenType | TokenType[]} type 要查找的令牌类型。
+     * @param {_KWARGS} [kwargs] 其他参数。
+     * @returns {boolean} 是否找到。
+     * @private
+     * @see _KWARGS
+     * */
     private find(_start: number, _end: number, type: TokenType, kwargs?: _KWARGS): boolean;
     private find(_start: number, _end: number, types: TokenType[], kwargs?: _KWARGS): boolean;
     private find(
@@ -1248,6 +1734,36 @@ export class Parser {
         return false;
     }
 
+    /**
+     * @method extractComments
+     * @summary 提取注释
+     * @desc 提取从当前位置到下一个令牌之间的注释，并返回注释列表。
+     * @returns {Comment[]} 注释列表。
+     * @private
+     * */
+    private extractComments(): Comment[] {
+        const comments: Comment[] = [];
+
+        this.skip();
+
+        while (this.inScope() && this.current?.category === TokenCategory.COMMENT) {
+            const comment = new CommenComment(this.current!.pos, this.current!.value);
+            comments.push(comment);
+
+            this.advance();
+
+            this.skip();
+        }
+
+        return comments;
+    }
+
+    /**
+     * @method syncStmtLevel
+     * @summary 同步语句级别
+     * @desc 同步语句级别，直到遇到语句结束符或语句级别结束符。
+     * @private
+     * */
     private syncStmtLevel() {
         while (this.inScope()) {
             if ([
@@ -1262,6 +1778,12 @@ export class Parser {
         }
     }
 
+    /**
+     * @method syncExprLevel
+     * @summary 同步表达式级别
+     * @desc 同步表达式级别，直到遇到表达式结束符或表达式级别结束符。
+     * @private
+     * */
     private syncExprLevel() {
         while (this.inScope()) {
             if ([
@@ -1269,13 +1791,23 @@ export class Parser {
                 TokenType.RBRACKET,
                 TokenType.RPAREN,
                 TokenType.NEWLINE
-            ].includes(this.current!.type)) {
+            ].includes(this.current!.type))
                 break;
-            }
+
             this.advance();
         }
     }
 
+    /**
+     * @method reportError
+     * @summary 报告错误
+     * @desc 报告错误，并记录到错误列表。
+     * @param {string} msg 错误信息。
+     * @param {IPos} start 错误开始位置。
+     * @param {IPos} end 错误结束位置。
+     * @private
+     * @see IPos
+     * */
     private reportError(msg: string, start: IPos, end: IPos) {
         this._errors.push(new ParseError(msg, start, end));
     }

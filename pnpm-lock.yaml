@@ -17,6 +17,9 @@ importers:
       '@types/mocha':
         specifier: ^10.0.6
         version: 10.0.10
+      '@types/murmurhash-js':
+        specifier: ^1.0.6
+        version: 1.0.6
       '@types/node':
         specifier: ^20
         version: 20.17.10
@@ -115,6 +118,9 @@ packages:
 
   '@types/mocha@10.0.10':
     resolution: {integrity: sha512-xPyYSz1cMPnJQhl0CLMH68j3gprKZaTjG3s5Vi+fDgx+uhG9NOXwbVt52eFS8ECyXhyKcjDLCBEqBExKuiZb7Q==}
+
+  '@types/murmurhash-js@1.0.6':
+    resolution: {integrity: sha512-P2RRwRpevEKO0FrK5xNjxBywg0Br24tEv8K2+iWg56PtcCUNGAkaaOWKBQiUpofA8H/gmgdHXrcvSgp2uXCVAQ==}
 
   '@types/node@20.17.10':
     resolution: {integrity: sha512-/jrvh5h6NXhEauFFexRin69nA0uHJ5gwk4iDivp/DeoEua3uwCUto6PC86IpRITBOs4+6i2I56K5x5b6WYGXHA==}
@@ -781,6 +787,8 @@ snapshots:
   '@types/json-schema@7.0.15': {}
 
   '@types/mocha@10.0.10': {}
+
+  '@types/murmurhash-js@1.0.6': {}
 
   '@types/node@20.17.10':
     dependencies:

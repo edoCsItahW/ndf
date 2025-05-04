@@ -1,10 +1,21 @@
 .vscode/**
+.idea/**
+.antlr/**
 **/*.ts
 **/*.map
 .gitignore
 **/tsconfig.json
 **/tsconfig.base.json
 contributing.md
+**/glbB.md
+注意.txt
+.prettierrc.json
+CHANGELOG_CN.md
+NDF.g4
+**/pnpm-lock.yaml
+**/scope.json
+**/test.ndf
+scripts/**
 .travis.yml
 client/node_modules/**
 !client/node_modules/vscode-jsonrpc/**
@@ -13,3 +24,4 @@ client/node_modules/**
 !client/node_modules/vscode-languageserver-types/**
 !client/node_modules/{minimatch,brace-expansion,concat-map,balanced-match}/**
 !client/node_modules/{semver,lru-cache,yallist}/**
+

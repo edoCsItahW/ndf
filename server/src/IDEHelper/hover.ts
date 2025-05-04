@@ -21,7 +21,7 @@ import {
     AST,
     Identifier,
     MemberAssign,
-    ParameterDecl,
+    ParameterDecl, Reference,
     TemplateDef,
     UnnamedObj
 } from "../parser/ast";
@@ -89,17 +89,23 @@ export class Hover {
     handle(node: Optional<AST>): Nullable<string> {
         if (this.debug)
             console.log(node);
+
         if (node instanceof Identifier) {
             if (node.belong instanceof TemplateDef)  // 悬停于模板名
                 return this.templateDef(node.belong);
+
             else if (node.belong instanceof MemberAssign)  // 悬停于成员名
                 return this.memberAssign(node.belong);
+
             else if (node.belong instanceof ParameterDecl)  // 悬停于参数名
                 return this.parameterDecl(node.belong);
+
             else if (node.belong instanceof Argument)  // 悬停于参数名
                 return this.argument(node.belong);
+
             else if (node.belong instanceof Assignment)
                 return this.assignment(node.belong);
+
             else {
                 const symbol = this.scope.resolve(node.value);
                 if (symbol)
@@ -108,5 +114,8 @@ export class Hover {
                     return `${node.value}: ${typeToStr(node.type)}`;
             }
         }
+
+        else if (node instanceof Reference)
+            return `${node.path}: ${typeToStr(node.type)}`;
     }
 }

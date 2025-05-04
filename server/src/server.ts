@@ -1,423 +1,711 @@
-// src/server.ts
+// Copyright (c) 2025. All rights reserved.
+// This source code is licensed under the CC BY-NC-SA
+// (Creative Commons Attribution-NonCommercial-NoDerivatives) License, By Xiao Songtao.
+// This software is protected by copyright law. Reproduction, distribution, or use for commercial
+// purposes is prohibited without the author's permission. If you have any questions or require
+// permission, please contact the author: 2207150234@st.sziit.edu.cn
 
+
+/**
+ * @file serverRebuild.ts
+ * @author edocsitahw
+ * @version 1.1
+ * @date 2025/05/03 11:54
+ * @desc
+ * @copyright CC BY-NC-SA 2025. All rights reserved.
+ * */
 import {
-	createConnection,
-	CompletionItemKind,
-	TextEdit,
-	DocumentFormattingParams,
-	Diagnostic,
-	DiagnosticSeverity,
-	TextDocuments,
-	HandlerResult,
-	DocumentDiagnosticReportKind
-} from "vscode-languageserver/node";
-import {
-	CompletionItem,
-	Connection,
-	DidChangeConfigurationNotification,
-	DidChangeConfigurationParams,
-	DidChangeTextDocumentParams,
-	DidChangeWatchedFilesParams,
-	DocumentDiagnosticParams,
-	DocumentDiagnosticReport,
-	Hover,
-	InitializeError,
-	InitializeParams,
-	InitializeResult,
-	ProposedFeatures,
-	SignatureHelp,
-	TextDocumentChangeEvent,
-	TextDocumentPositionParams,
-	TextDocumentSyncKind
+    Connection,
+    DidChangeConfigurationNotification,
+    DidChangeConfigurationParams,
+    DocumentDiagnosticParams, DocumentDiagnosticReport, Hover,
+    InitializedParams,
+    InitializeError,
+    InitializeParams,
+    InitializeResult,
+    ProposedFeatures, TextDocumentChangeEvent, TextDocumentPositionParams, WorkspaceFolder
 } from "vscode-languageserver";
-import {TextDocument} from "vscode-languageserver-textdocument";
-import { Nullable, Settings } from "./types";
-import { Token, Lexer, Processor } from "./lexer";
-import { Parser, Analyser, Scope, InternalNode, LeafNode, Program, Visitor } from "./parser";
-import { NDFError, NDFWarning } from './expection';
-import { Hover as HoverHelper, LOCALE } from './IDEHelper';
+import {
+    createConnection,
+    DiagnosticSeverity,
+    DocumentDiagnosticReportKind,
+    HandlerResult,
+    TextDocuments
+} from "vscode-languageserver/node";
+import { TextDocument } from "vscode-languageserver-textdocument";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve, relative, dirname } from "node:path";
+import { cpus } from "node:os";
+import { createHash } from "node:crypto";
+import { Analyser, analyze, InternalNode, LeafNode, Parser, Program, Scope, Symbol, Visitor } from "./parser";
+import { IGlobalCache, Language, Level, Nullable } from "./types";
+import { Hover as HoverHelper, LOCALE } from "./IDEHelper";
+import { GlobalBuilder } from "./IDEHelper/globalBuild";
+import { NDFError, NDFWarning } from "./expection";
+import { Lexer, Processor, Token } from "./lexer";
+import { methodDebug } from "./debug";
 
 
-const flags = {
-	// @desc 客户端是否支持 `workspace/configuration` 请求？
-	hasConfigurationCapability: false,
-	// 客户端是否支持 `workspace/workspaceFolders` 请求？
-	hasWorkspaceFolderCapability: false,
-	// 客户端是否支持 `textDocument/publishDiagnostics` 的 `relatedInformation` 字段？
-	hasDiagnosticRelatedInformationCapability: false
-};
+/**
+ * @class Server
+ * @summary vscode语言服务器类。
+ * @classDesc 该类实现了vscode语言服务器的主要功能。
+ * */
+class Server {
+    /**
+     * @var documentsCaches
+     * @summary 文档缓存。
+     * @desc 该属性用于记录所有已打开的文档的缓存。
+     * @private
+     * @see DocCacheValue
+     * */
+    private documentsCaches: { [uri: string]: DocCacheValue } = {};
 
+    /**
+     * @var globalCaches
+     * @summary 全局缓存。
+     * @desc 该属性用于记录全局缓存。
+     * @private
+     * @see GlobalCache
+     * */
+    private globalCaches: GlobalCache;
 
-export class Server {
-	private caches: {
-		ast: Nullable<Program>,
-		errors: NDFError[],
-		scope: Nullable<Scope>
-	} = {
-		ast: undefined,
-		errors: [],
-		scope: undefined
-	};
+    /**
+     * @var settings
+     * @summary 服务器设置。
+     * @desc 该属性用于记录服务器设置。
+     * @private
+     * @see Settings
+     * */
+    private settings: Settings = DEFAULT_SETTINGS;
 
-	// 全局设置，在客户端不支持 `workspace/configuration` 请求时使用。
-	// 请注意，在使用此示例提供的客户端时，不会出现这种情况，
-	// 但与其他客户端一起使用时可能会发生。
-	private defaultSettings: Settings = {maxNumberOfProblems: 1000, language: "en-US", level: "loose"} as const;
-	private globalSettings: Settings = this.defaultSettings;
-	private uri: Nullable<string>;
-	debug: boolean = false;
+    private extName: string = "ndf";
+    private prjRoot: string = "";
+    private cacheFile: Nullable<string>;
+    debug: boolean = false;
 
-	// 缓存所有打开文档的设置
-	private documentSettings = new Map<string, Thenable<Settings>>();
+    /**
+     * @constructor
+     * @summary 构造函数。
+     * @desc 该构造函数用于初始化服务器。
+     * @param connection 服务器连接。
+     * @param documents 文档管理器。
+     * @see Connection
+     * @see TextDocuments
+     * */
+    constructor(
+        private readonly connection: Connection = createConnection(ProposedFeatures.all),
+        private readonly documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument)
+    ) {
+        this.globalCaches = {
+            symbols: {
+                searched: new Map(),
+                global: {}
+            },
+            uri: "",
+            backSteps: [],
+            flag: {
+                searched: false,
+                workspaceCfg: false
+            }
+        };
+    }
 
-	// 创建服务器连接，使用 Node 的 IPC 作为传输方式。同时包括所有预览 / 提案的 LSP 功能。
-	constructor(
-		private conn: Connection = createConnection(ProposedFeatures.all),
-		private documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument)
-	) {
-	}
+    /**
+     * @method run
+     * @summary 运行服务器。
+     * @desc 该方法用于运行服务器。
+     * @remarks
+     * 服务器启动时函数调用顺序:
+     * 1. initialize()
+     * 2. initialized()
+     * 3. didOpen()
+     * 4. didChangeContent()
+     * 5. diagnostics()
+     *
+     * 切换文档时(首次打开该文档时)函数调用顺序:
+     * 1. didOpen()
+     * 2. didChangeContent()
+     * 3. diagnostics()
+     * */
+    run() {
+        console.log("NDF Language Server is running");
 
-	/**
-	 * @desc 初始化服务器功能
-	 */
-	initialize(params: InitializeParams): HandlerResult<InitializeResult, InitializeError> {
-		const capabilities = params.capabilities;
+        // 初始化
+        this.connection.onInitialize(this.initialize.bind(this));  // 初始化
+        this.connection.onInitialized(this.initialized.bind(this));  // 初始化完成
 
-		// 客户端是否支持 `workspace/configuration` 请求？如果不支持，我们将使用全局配置。
-		flags.hasConfigurationCapability = !!(capabilities.workspace && !!capabilities.workspace.configuration);
-		flags.hasWorkspaceFolderCapability = !!(capabilities.workspace && !!capabilities.workspace.workspaceFolders);
-		flags.hasDiagnosticRelatedInformationCapability = !!(
-			capabilities.textDocument &&
-			capabilities.textDocument.publishDiagnostics &&
-			capabilities.textDocument.publishDiagnostics.relatedInformation
-		);
+        // 功能
+        this.connection.onHover(this.hover.bind(this));  // 悬停提示
+        // this.connection.onCompletion(this.completion.bind(this));  // 代码完成
+        // this.connection.onCompletionResolve(this.completionResolve.bind(this))  // 代码完成解析
+        // this.connection.onDocumentFormatting(this.formatting.bind(this))  // 格式化
+        // this.connection.onSignatureHelp(this.signatureHelp.bind(this))  // 签名帮助
 
-		const res: InitializeResult = {
-			capabilities: {
-				hoverProvider: true, // 悬停提示
-//				documentFormattingProvider: true, // 格式化文档
-//				signatureHelpProvider: {
-//					// 签名帮助
-//					triggerCharacters: ["("]
-//				},
-//
-//				textDocumentSync: TextDocumentSyncKind.Incremental, // 文本文档同步
-//				completionProvider: {
-//					// 代码完成
-//					resolveProvider: true
-//				},
-				diagnosticProvider: {
-					interFileDependencies: false, // 跨文件依赖
-					workspaceDiagnostics: false // 工作区诊断
-				}
-			}
-		};
+        // 事件监听
+        // this.connection.onDidChangeWatchedFiles(this.watchedFilesChanged.bind(this))  // 文件监视器变更
+        this.connection.onDidChangeConfiguration(this.configurationChanged.bind(this));  // 配置变更
+        this.connection.onDidChangeTextDocument(this.textDocumentChanged.bind(this));  // 文档内容变更
 
-		if (flags.hasWorkspaceFolderCapability)
-			res.capabilities.workspace = {
-				workspaceFolders: {supported: true}
-			};
+        // 诊断
+        this.connection.languages.diagnostics.on(this.diagnostics.bind(this));  // 文档诊断
 
-		return res;
-	}
+        // 文档监听
+        this.documents.onDidOpen(this.didOpen.bind(this));  // 文档打开
+        this.documents.onDidChangeContent(this.didChangeContent.bind(this));  // 文档内容变更
+        this.documents.onDidClose(this.didClose.bind(this));  // 文档关闭
 
-	/**
-	 * @desc 注册配置更改和文件夹更改事件
-	 */
-	Initialized(): void {
-		if (flags.hasConfigurationCapability) this.conn.client.register(DidChangeConfigurationNotification.type, undefined);
-		if (flags.hasWorkspaceFolderCapability) this.conn.workspace.onDidChangeWorkspaceFolders(ev => {});
-	}
+        // 启动服务器
+        this.documents.listen(this.connection);
+        this.connection.listen();
+    }
 
-	/**
-	 * @method getDocSettings
-	 * @summary 获取文档级设置
-	 * @desc 文档级设置是指特定文档的配置，可以通过 `workspace/configuration` 请求获取。
-	 * @remarks
-	 * 如果客户端不支持 `workspace/configuration` 请求，则会使用全局配置。
-	 * 如果已经缓存了文档级设置，则直接返回缓存的结果。
-	 * 如果没有缓存，则会发送 `workspace/configuration` 请求获取文档级设置,并缓存结果。
-	 * */
-	private getDocSettings(res: string): Thenable<Settings> {
-		if (!flags.hasConfigurationCapability)
-			return Promise.resolve(this.globalSettings);
+    /**
+     * @method initialize
+     * @summary 初始化服务器。
+     * @desc 语言服务器的初始化处理器.
+     * @callback
+     * @param params 初始化参数。
+     * @returns 初始化结果。
+     * @remarks 由于大多数用户的配置都支持`workspace/configuration`和`workspace/workspaceFolders`所以不做判断.
+     * @see InitializeParams
+     * @see onInitialize
+     * */
+    @methodDebug(serverDebug)
+    private initialize(params: InitializeParams): HandlerResult<InitializeResult, InitializeError> {
+        const capabilities = params.capabilities;
 
-		let result = this.documentSettings.get(res);
+        this.globalCaches.flag.workspaceCfg = !!capabilities.workspace?.configuration;
 
-		if (!result) {
-			result = this.conn.workspace.getConfiguration({scopeUri: res, section: "ndf"});
-			this.documentSettings.set(res, result);
-		}
+        const result: InitializeResult = {
+            capabilities: {
+                // 悬停提示: 支持
+                hoverProvider: true,
 
-		return result;
-	}
+                // 代码完成: 暂不支持
+                completionProvider: {
+                    resolveProvider: false
+                },
 
-	/**
-	 * @method digOpenDocument
-	 * @summary 打开文档时处理
-	 * @desc 打开文档时，我们会解析文档内容，并缓存解析结果。
-	 * @param e 事件参数
-	 * */
-	private digOpenDocument(e: TextDocumentChangeEvent<TextDocument>) {
-		this.uri = e.document.uri;
+                // 文档诊断: 支持
+                diagnosticProvider: {
+                    interFileDependencies: false,  // 跨文件依赖
+                    workspaceDiagnostics: false  // 工作区诊断
+                },
 
-		this.getDocSettings(this.uri).then(settings => {
-			this.globalSettings = settings;
+                // 格式化: 暂不支持
+                documentFormattingProvider: false,
 
-			LOCALE.language = this.globalSettings.language || this.defaultSettings.language;
+                // 签名帮助: 暂不支持
+                signatureHelpProvider: undefined,
 
-			this.parse(e.document.getText());
-		});
-	}
+                // 语义令牌: 暂不支持
+                semanticTokensProvider: undefined,
 
-	/**
-	 * @method digChangeTextDocument
-	 * @summary 文档内容更改时处理
-	 * @desc 文档内容更改时，我们会清空缓存。
-	 * @param e 事件参数
-	 * @remarks 用户输入后立即执行
-	 * */
-	digChangeTextDocument(e: DidChangeTextDocumentParams) {
-		this.caches.scope = undefined;
-		this.caches.errors = [];
-	}
+                // 文本文档同步: 暂不支持
+                textDocumentSync: undefined
+            }
+        };
 
-	/**
-	 * @method digChangeContent
-	 * @summary 文档内容更改时处理
-	 * @desc 文档内容更改时，我们会解析文档内容，并缓存解析结果。
-	 * @param e 事件参数
-	 * @remarks 用户停止输入后500ms后执行
-	 * */
-	digChangeContent(e: TextDocumentChangeEvent<TextDocument>) {
-		this.uri = e.document.uri;
-		// e.document.languageId
+        if (this.globalCaches.flag.workspaceCfg)
+            result.capabilities.workspace = { workspaceFolders: { supported: true } };
 
-		this.parse(e.document.getText());
-	}
+        LOCALE.language = this.settings.language;
 
-	didChangeConfiguration(change: DidChangeConfigurationParams): void {
-		const getConfiguration = (): Thenable<Settings> => {
-			if (flags.hasConfigurationCapability) {
-				// 主动获取最新配置
-				const result = this.conn.workspace.getConfiguration("ndf");
-				this.documentSettings.set(this.uri!, result);
-				return result;
-			}
+        return result;
+    }
 
-			else
-				return change.settings?.ndf || this.defaultSettings;
+    /**
+     * @method initialized
+     * @summary 初始化完成。
+     * @desc 语言服务器初始化完成处理器。
+     * @callback
+     * @param params 初始化参数。
+     * @remarks 由于大多数用户的配置都支持`workspace/configuration`和`workspace/workspaceFolders`所以不做判断.
+     * @see InitializedParams
+     * @see onInitialized
+     * */
+    @methodDebug(serverDebug)
+    private async initialized(params: InitializedParams) {
+        this.connection.client.register(DidChangeConfigurationNotification.type);  // 配置变更通知
+        this.connection.workspace.onDidChangeWorkspaceFolders(e => {
+        });  // 工作区文件夹变更通知
 
-		};
+        if (this.globalCaches.flag.workspaceCfg)
+            this.connection.workspace.getConfiguration(this.extName).then(cfg => {
+                this.settings = { ...this.settings, ...cfg };
+                LOCALE.language = this.settings.language;
+            });
 
-		// 异步处理配置更新
-		getConfiguration().then(config => {
-			this.globalSettings = config;
-			LOCALE.language = config.language || this.defaultSettings.language;
+        // 获取项目根目录
+        const workspaceFolders = await this.connection.workspace.getWorkspaceFolders();
+        if (workspaceFolders)
+            this.prjRoot = uriToPath(workspaceFolders[0].uri);
+    }
 
-			// 清除文档级缓存
-			this.documentSettings.clear();
+    /**
+     * @method configurationChanged
+     * @summary 配置变更。
+     * @desc 语言服务器配置变更处理器。
+     * @callback
+     * @param params 配置变更参数。
+     * @see DidChangeConfigurationParams
+     * @see onDidChangeConfiguration
+     * */
+    @methodDebug(serverDebug)
+    private async configurationChanged(params: DidChangeConfigurationParams) {
+        const change: Promise<Settings> | Settings = this.globalCaches.flag.workspaceCfg
+            ? this.connection.workspace.getConfiguration(this.extName)  // 工作区配置
+            : params.settings?.[this.extName] || {};  // 用户配置
 
-			if (this.uri)
-				this.parse(this.documents.get(this.uri)!.getText());
+        if (change) {
+            this.settings = { ...this.settings, ...(change instanceof Promise ? await change : change) };
 
-			// 优化诊断刷新
-			this.conn.languages.diagnostics.refresh();
-		});
-	}
+            // 手动跟新部分配置
+            LOCALE.language = this.settings.language;
 
-	/**
-	 * @desc 仅保留打开文档的设置
-	 *
-	 * @param e
-	 * @returns
-	 */
-	digClose(e: TextDocumentChangeEvent<TextDocument>) {
-		return this.documentSettings.delete(e.document.uri);
-	}
+            this.documentsCaches[this.globalCaches.uri].hash = "";
 
-	private parse(text: string): void {
-		const lexer = new Lexer(text, LOCALE);
+            // 重新进行分析
+            this.parse(this.documents.get(this.globalCaches.uri)!.getText());
+        }
+    }
 
-		const parser = new Parser(new Processor(lexer.tokenize()).process(false), LOCALE);
+    private textDocumentChanged() {
+        console.log("textDocumentChanged");
+    }
 
-		this.caches.ast = parser.parse();
+    /**
+     * @method diagnostics
+     * @summary 文档诊断。
+     * @desc 文档诊断处理器。
+     * @callback
+     * @param params 文档诊断参数。
+     * @returns 文档诊断结果。
+     * @see DocumentDiagnosticParams
+     * @see onDiagnostics
+     * */
+    @methodDebug(serverDebug)
+    private async diagnostics(params: DocumentDiagnosticParams): Promise<DocumentDiagnosticReport> {
+        const document = this.documents.get(params.textDocument.uri);
 
-		const anlys = new Analyser(this.caches.ast!, LOCALE);
+        if (document)  // 文档存在
+            return {
+                kind: "full",
+                items: this.documentsCaches[params.textDocument.uri].errors.map(e => {
+                    return {
+                        severity: e instanceof NDFWarning
+                            ? (this.settings.level === "strict" ? DiagnosticSeverity.Warning : DiagnosticSeverity.Information)
+                            : (this.settings.level === "strict" ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning),
+                        range: {
+                            start: { line: e.start.line - 1, character: e.start.column - 1 },
+                            end: { line: e.end.line - 1, character: e.end.column - 1 }
+                        },
+                        message: e.message,
+                        source: LOCALE.t("server", "NSI1", false)
+                    };
+                })
+            } satisfies DocumentDiagnosticReport;
 
-		this.caches.scope = anlys.analyze();
+        // 无法获取文档,则尝试从磁盘读取,亦或是不报告诊断
+        return { kind: DocumentDiagnosticReportKind.Full, items: [] } satisfies DocumentDiagnosticReport;
+    }
 
-		this.caches.errors = [...lexer.errors, ...parser.errors, ...anlys.errors];
-	}
+    /**
+     * @method didOpen
+     * @summary 文档打开。
+     * @desc 文档打开处理器。
+     * @callback
+     * @param e 文档事件。
+     * @see TextDocumentChangeEvent
+     * @see onDidOpen
+     * */
+    @methodDebug(serverDebug)
+    private async didOpen(e: TextDocumentChangeEvent<TextDocument>) {
+        this.globalCaches.uri = e.document.uri;
 
-	async validateTextDocument(textDocument: TextDocument): Promise<Diagnostic[]> {
-		// 在这个简单的示例中，我们会在每次验证运行时获取文档的设置。
-		const settings = await this.getDocSettings(this.uri!);
-		
-		const diagnostics: Diagnostic[] = [];
+        if (this.settings.globalSearch && !this.globalCaches.flag.searched) {
+            this.globalCaches.flag.searched = true;
+            this.buildGlobalSymbols();
+        }
 
-		if (settings.level !== "ignore")
-			for (const error of this.caches.errors)
-				diagnostics.push({
-					severity: error instanceof NDFWarning
-						? (settings.level === "strict" ? DiagnosticSeverity.Warning : DiagnosticSeverity.Information)
-						: (settings.level === "strict" ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning),
-					range: {
-						start: {line: error.start.line - 1, character: error.start.column - 1},
-						end: {line: error.end.line - 1, character: error.end.column - 1}
-					},
-					message: error.message,
-					source: LOCALE.t("server", "NSI1", false)
-				});
+        this.documentsCaches[e.document.uri] = {
+            tokens: [],
+            ast: undefined,
+            errors: [],
+            scope: undefined,
+            needImports: new Map(),
+            imported: false,
+            hash: ""
+        };
 
-		return diagnostics;
-	}
+        this.parse(e.document.getText());
+    }
 
-	async diagnose(params: DocumentDiagnosticParams) {
-		const document = this.documents.get(params.textDocument.uri);
-		if (document !== undefined) return {
-			kind: DocumentDiagnosticReportKind.Full,
-			items: await this.validateTextDocument(document)
-		} satisfies DocumentDiagnosticReport;
+    /**
+     * @method didChangeContent
+     * @summary 文档内容变更。
+     * @desc 文档内容变更处理器。
+     * @callback
+     * @param e 文档事件。
+     * @see TextDocumentChangeEvent
+     * @see onDidChangeContent
+     * */
+    @methodDebug(serverDebug)
+    private didChangeContent(e: TextDocumentChangeEvent<TextDocument>) {
+        this.globalCaches.uri = e.document.uri;
 
-		// 我们不知道该文档。我们可以尝试从磁盘读取它，
-		// 或者我们不对它报告问题。
-		return {kind: DocumentDiagnosticReportKind.Full, items: []} satisfies DocumentDiagnosticReport;
-	}
+        this.parse(e.document.getText());
+    }
 
-	hover(params: TextDocumentPositionParams): Promise<Hover> {
-		const {line, character} = params.position;
+    private didClose() {
+    }
 
-		let node: Nullable<LeafNode>;
-		Visitor.visit(this.caches.ast!, (n: LeafNode | InternalNode) => {
-			if (n instanceof LeafNode
-				&& line === n.pos.line - 1
-				&& n.pos.column - 1 <= character
-				&& n.pos.column - 1 + n.value.length >= character
-			) {
-				node = n;
-				return true;
-			}
-			return false;
-		});
+    /**
+     * @method hover
+     * @summary 悬停提示。
+     * @desc 悬停提示处理器。
+     * @callback
+     * @param params 悬停提示参数。
+     * @returns 悬停提示结果。
+     * @see TextDocumentPositionParams
+     * @see onHover
+     * */
+    @methodDebug(serverDebug)
+    private async hover(params: TextDocumentPositionParams): Promise<Hover> {
+        const { line, character } = params.position;
 
-		const hover = new HoverHelper(this.caches.scope!, false);
-		const hoverInfo = hover.handle(node);
+        let node: Nullable<LeafNode>;
+        Visitor.visit(this.documentsCaches[params.textDocument.uri].ast!, (n: LeafNode | InternalNode) => {
+            if (n instanceof LeafNode && line === n.pos.line - 1
+                && character >= n.pos.column - 1 && character <= n.pos.column + n.value.length - 1) {
+                node = n;
+                return true;
+            }
+            return false;
+        });
 
-		return Promise.resolve({
-			contents: hoverInfo ? [
-				{language: "markdown", value: hoverInfo}
-			] : []
-		});
-	}
+        const hover = new HoverHelper(this.documentsCaches[params.textDocument.uri].scope!);
+        const info = hover.handle(node);
 
-	docFormat(params: DocumentFormattingParams): Promise<TextEdit[]> {
-		const {textDocument} = params;
-		const doc = this.documents.get(textDocument.uri)!;
-		const text = doc.getText();
-		const pattern = /\b[A-Z]{3,}\b/g;
-		let match;
-		const res = [];
-		// 查找连续大写字符串
-		while ((match = pattern.exec(text))) {
-			res.push({
-				range: {
-					start: doc.positionAt(match.index),
-					end: doc.positionAt(match.index + match[0].length)
-				},
-				// 将大写字符串替换为 驼峰风格
-				newText: match[0].replace(/(?<=[A-Z])[A-Z]+/, r => r.toLowerCase())
-			});
-		}
+        return {
+            contents: info ? [{ language: "markdown", value: info }] : []
+        };
+    }
 
-		return Promise.resolve(res);
-	}
+    /**
+     * @method parse
+     * @summary 解析文档。
+     * @desc 该方法用于解析文档。
+     * @param {string} code 文档内容。
+     * @remarks
+     * 此方法已经进行了诊断刷新。
+     * @see Lexer
+     * @see Processor
+     * @see Parser
+     * @see Analyser
+     * */
+    @methodDebug(serverDebug)
+    private parse(code: string) {
+        if (code.trim() === "")  // 空白文档
+            return;
 
-	signatureHelp(params: TextDocumentPositionParams): Promise<SignatureHelp> {
-		return Promise.resolve({
-			signatures: [
-				{
-					label: "Signature Demo",
-					documentation: "帮助文档",
-					parameters: [
-						{
-							label: "@p1 first param",
-							documentation: "参数说明"
-						}
-					]
-				}
-			],
-			activeSignature: 0,
-			activeParameter: 0
-		});
-	}
+        const hash = createHash("md5").update(code).digest("hex");
 
-	didChangeWatchedFiles(change: DidChangeWatchedFilesParams): void {
-		// 在 VSCode 中监控的文件已更改
-		change.changes.forEach(fileChange => {
-			if (fileChange.type === 1) {
-				// 文件被新增
-				console.log(`文件 ${fileChange.uri} 被新增`);
-			} else if (fileChange.type === 2) {
-				// 文件被更改
-				console.log(`文件 ${fileChange.uri} 被更改`);
-			} else if (fileChange.type === 3) {
-				// 文件被删除
-				console.log(`文件 ${fileChange.uri} 被删除`);
-			}
-		});
-	}
+        if (this.documentsCaches[this.globalCaches.uri].hash === hash)  // 文档内容未变更
+            return;
 
-	completion(params: TextDocumentPositionParams): CompletionItem[] {
-		// 传递的参数包含请求代码补全的文本文档中的位置信息。
-		// 在此示例中，我们忽略此信息并且总是提供相同的代码补全项。
-		return [
-			{
-				label: "example",  // 标签
-				kind: CompletionItemKind.Text,  // 类型
-				detail: "示例详情",  // 详细信息
-				documentation: "示例文档",  // 文档
-				sortText: "00001",  // 排序文本
-				filterText: "example",  // 过滤文本
-				insertText: "example",  // 插入文本
-				insertTextFormat: 2,  // 插入文本格式
-				preselect: true,  // 是否预选中
-				data: {  // 自定义数据
-					uri: "example://example/example"
-				},
-				tags: [  // 标签
+        // 词法分析
+        const lexer = new Lexer(code, LOCALE);
+        this.documentsCaches[this.globalCaches.uri].tokens = new Processor(lexer.tokenize()).process();
 
-				]
-			}
-		];
-	}
+        // 语法分析
+        const parser = new Parser(this.documentsCaches[this.globalCaches.uri].tokens, LOCALE);
+        this.documentsCaches[this.globalCaches.uri].ast = parser.parse();
 
-	completionResolve(item: CompletionItem): CompletionItem {
-		return item;
-	}
+        // 语义分析
+        const anlyzer = new Analyser(this.documentsCaches[this.globalCaches.uri].ast!, LOCALE);
+        if (this.settings.globalSearch)
+            anlyzer.globalSymbolCallback = this.globalSymbolCB.bind(this);
 
-	run() {
-		console.log("NDF parser running");
-		this.conn.onInitialize(params => this.initialize(params));
-		this.conn.onInitialized(() => this.Initialized());
-		this.conn.onDidChangeConfiguration(change => this.didChangeConfiguration(change));
-		this.conn.languages.diagnostics.on(params => this.diagnose(params));
-		this.conn.onHover(params => this.hover(params));
-		this.conn.onDocumentFormatting(params => this.docFormat(params));
-		this.conn.onSignatureHelp(params => this.signatureHelp(params));
-		this.conn.onDidChangeWatchedFiles(change => this.didChangeWatchedFiles(change));
-		this.conn.onCompletion(params => this.completion(params));
-		this.conn.onCompletionResolve(item => this.completionResolve(item));
-		this.conn.onDidChangeTextDocument(e => this.digChangeTextDocument(e));
-		this.documents.onDidClose(e => this.digClose(e));
-		this.documents.onDidChangeContent(e => this.digChangeContent(e));
-		this.documents.onDidOpen(e => this.digOpenDocument(e))
-		this.documents.listen(this.conn);
-		this.conn.listen();
-	}
+        anlyzer.importSymbolCallback = this.importSymbolCB.bind(this);
+
+        this.documentsCaches[this.globalCaches.uri].scope = anlyzer.analyze();
+
+        this.documentsCaches[this.globalCaches.uri].errors = [...lexer.errors, ...parser.errors, ...anlyzer.errors];
+
+        this.documentsCaches[this.globalCaches.uri].hash = hash;
+
+        if (!this.documentsCaches[this.globalCaches.uri].imported && this.settings.autoSpawnImport)
+            this.spawnImport(uriToPath(this.globalCaches.uri), this.documentsCaches[this.globalCaches.uri].needImports);
+
+        this.connection.languages.diagnostics.refresh();
+    }
+
+    /**
+     * @method globalSymbolCB
+     * @summary 全局符号回调。
+     * @desc 在{@link Analyser}进行全局符号搜索时调用。
+     * @callback
+     * @param name 符号名称。
+     * @returns 符号对象。
+     * @see Analyser.globalSymbolCallback
+     * */
+    @methodDebug(serverDebug)
+    private globalSymbolCB(name: string): Nullable<Symbol> {
+        if (this.globalCaches.backSteps.includes(name))  // 在逆推表中表示搜索失败
+            return;
+
+        if (this.globalCaches.symbols.searched.has(name))  // 已在搜索缓存中
+            return this.globalCaches.symbols.searched.get(name)!;
+
+        if (this.cacheFile && existsSync(this.cacheFile))  // 存在缓存文件,则尝试读取缓存
+            this.globalCaches.symbols.global = JSON.parse(readFileSync(this.cacheFile, "utf-8"));
+
+        if (this.globalCaches.symbols.global)  // 全局缓存存在
+            for (const [file, value] of Object.entries(this.globalCaches.symbols.global))
+                if (value.symbols.hasOwnProperty(name)) {
+                    const symbol = Symbol.fromJSON(value.symbols[name]);
+
+                    this.globalCaches.symbols.searched.set(name, symbol);
+
+                    // 记录需要导入的符号
+                    if (
+                        this.documentsCaches[this.globalCaches.uri].needImports.has(file)
+                        && !this.documentsCaches[this.globalCaches.uri].needImports.get(file)!.includes(name)
+                    )
+                        this.documentsCaches[this.globalCaches.uri].needImports.get(file)!.push(name);
+                    else
+                        this.documentsCaches[this.globalCaches.uri].needImports.set(file, [name]);
+
+                    return symbol;
+                }
+
+        this.globalCaches.backSteps.push(name);  // 加入逆推表
+    }
+
+    /**
+     * @method spawnImport
+     * @summary 自动将找到的全局符号导入到文档中。
+     * @desc 该方法用于自动将找到的全局符号导入到文档中。
+     * @param {string} path 文档路径。
+     * @param {Map<string, string[]>} needImports 需要导入的符号。
+     * @see parse
+     * */
+    @methodDebug(serverDebug)
+    private spawnImport(path: string, needImports: Map<string, string[]>) {
+        const codes: string[] = [];
+        needImports.forEach((names, file) => codes.push(`/// from '\\${relative(this.prjRoot, file)}' import ${names.join(", ")}\n`));
+
+        if (codes.length) {
+            const code = codes.join("");
+
+            const content = readFileSync(path, "utf-8");
+
+            const newContent = code + content;
+
+            writeFileSync(path, newContent);
+
+            this.documentsCaches[this.globalCaches.uri].imported = true;
+        }
+    }
+
+    /**
+     * @method importSymbolCB
+     * @summary 导入符号回调。
+     * @desc 在{@link Analyser}进行导入符号搜索时调用。
+     * @callback
+     * @param {string[]} names 符号名称。
+     * @param {string} [path] 导入路径。
+     * @returns {Symbol[] | string} 符号对象数组,如果路径不正确则返回错误信息。
+     * @see Analyser.importSymbolCallback
+     * @remarks
+     * 导入方式分为标准库导入和自定义导入,自定义导入又分为相对根目录导入,相对导入文件导入和绝对导入.
+     * */
+    @methodDebug(serverDebug)
+    private importSymbolCB(names: string[], path?: string): Symbol[] | string {
+        const symbols: Symbol[] = [];
+
+        if (path) {  // 自定义导入
+            let absPath: string;
+
+            if (path.startsWith("."))
+                absPath = resolve(uriToPath(this.globalCaches.uri), path);
+
+            else if (path.startsWith("/") || path.startsWith("\\"))
+                absPath = join(this.prjRoot, path.slice(1));
+
+            else
+                absPath = path;
+
+            if (existsSync(absPath)) {
+                const code = readFileSync(absPath, "utf-8");
+
+                const { scope } = analyze(code);
+
+                names.forEach(name => {
+                    const symbol = scope.resolve(name);
+
+                    if (symbol)
+                        symbols.push(symbol);
+                });
+
+                return symbols;
+            }
+
+            return LOCALE.t("server", "NSI2", path);
+        } else {  // 标准库导入
+            const lib = readFileSync(join(dirname(__dirname), 'lib.d.ndf'), "utf8");
+
+            const { scope } = analyze(lib);
+
+            names.forEach(name => {
+                const symbol = scope.resolve(name);
+
+                if (symbol)
+                    symbols.push(symbol);
+            });
+
+            return symbols;
+        }
+    }
+
+    /**
+     * @method buildGlobalSymbols
+     * @summary 构建全局符号。
+     * @desc 该方法用于构建全局符号。
+     * */
+    @methodDebug(serverDebug)
+    private async buildGlobalSymbols() {
+        const folders = await this.connection.workspace.getWorkspaceFolders();
+
+        folders?.forEach(folder => {
+            if (WorkspaceFolder.is(folder)) {
+                const folderPath = uriToPath(folder.uri);
+
+                const gb = new GlobalBuilder(folderPath, {
+                    processNum: this.settings.processNumber,
+                    threadNum: this.settings.threadNumber,
+                    asyncNum: this.settings.asyncWorkerNumber
+                });
+
+                this.cacheFile = gb.cacheFile;
+
+                gb.build(() => {
+                    if (existsSync(this.cacheFile!))  // 缓存文件存在,则尝试读取缓存
+                        this.globalCaches.symbols.global = JSON.parse(readFileSync(this.cacheFile!, "utf-8"));
+
+                    this.documentsCaches[this.globalCaches.uri].hash = "";
+
+                    // 重新进行分析
+                    this.parse(this.documents.get(this.globalCaches.uri)!.getText());
+                });
+            }
+        });
+    }
 }
 
 
-const server = new Server();
-server.debug = true;
-server.run();
+function uriToPath(uri: string): string {
+    return uri.replace("file:///", "").replace("%3A", ":");
+}
+
+
+/**
+ * @interface DocCacheValue
+ * @summary 文档缓存值。
+ * @desc 该接口用于描述文档缓存值。
+ * @property {Token[]} tokens 文档的词法分析结果。
+ * @property {Program} ast 文档的语法分析结果。
+ * @property {NDFError[]} errors 文档的诊断结果。
+ * @property {Scope} scope 文档的语义分析结果。
+ * @property {string} hash 文档的哈希值。
+ * */
+interface DocCacheValue {
+    tokens: Token[];
+    ast: Nullable<Program>;
+    errors: NDFError[];
+    scope: Nullable<Scope>;
+    needImports: Map<string, string[]>;
+    imported: boolean;
+    hash: string;
+}
+
+
+/**
+ * @interface GlobalCache
+ * @summary 全局缓存。
+ * @desc 该接口用于描述全局缓存。
+ * @property {Map<string, Symbol>} symbols 全局符号缓存。
+ * @property {string} uri 当前文档的URI。
+ * @property {string[]} backSteps 逆推表。
+ * @property {{ searched: boolean, workspaceCfg: boolean }} flag 全局缓存标志。
+ * */
+interface GlobalCache {
+    /**
+     * @var symbols
+     * @summary 全局符号缓存。
+     * @desc 该属性用于记录全局符号缓存。
+     * @property {Map<string, Symbol>} searched 已搜索的符号。
+     * @property {Map<string, IFileCache>} global 全局符号缓存。
+     * */
+    symbols: {
+        searched: Map<string, Symbol>;
+        global: IGlobalCache;
+    };
+    uri: string;
+    backSteps: string[];
+    /**
+     * @var flag
+     * @summary 全局缓存标志。
+     * @desc 该属性用于记录全局缓存标志。
+     * @property {boolean} searched 已搜索标志。
+     * @property {boolean} workspaceCfg 工作区配置标志。
+     * */
+    flag: {
+        searched: boolean;
+        workspaceCfg: boolean;
+    };
+}
+
+
+/**
+ * @interface Settings
+ * @summary 服务器设置。
+ * @desc 该接口用于描述服务器设置。
+ * @property {number} maxNumberOfProblems 最大诊断数量。
+ * @property {Language} language 语言。
+ * @property {Level} level 严格模式。
+ * @property {boolean} globalSearch 全局搜索。
+ * */
+export interface Settings {
+    maxNumberOfProblems: number;
+    language: Language;
+    level: Level;
+    globalSearch: boolean;
+    processNumber: number;
+    threadNumber: number;
+    asyncWorkerNumber: number;
+    autoSpawnImport: boolean;
+}
+
+
+function serverDebug(obj: Server, fnName: string) {
+    if (obj.debug)
+        console.log(`[Server] ${fnName}`);
+}
+
+
+const DEFAULT_SETTINGS: Settings = {
+    maxNumberOfProblems: 100,
+    language: "en-US",
+    level: "loose",
+    globalSearch: true,
+    processNumber: 3,
+    threadNumber: cpus().length / 2,
+    asyncWorkerNumber: 10,
+    autoSpawnImport: true
+};
+
+
+new Server().run();

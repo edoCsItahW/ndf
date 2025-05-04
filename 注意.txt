@@ -18,3 +18,242 @@ https://marketplace.visualstudio.com/manage
 CHANGELOG 模板
 
 https://keepachangelog.com/en/1.1.0/
+
+每次运行步骤
+1. npm install (pnpm 会出现问题)
+2. npm run compile
+3. F5 启动调试
+
+
+// -------------------------- 动态高亮 --------------------
+// 在 LSP 服务器的 initialize 方法中声明支持语义令牌
+const result: InitializeResult = {
+  capabilities: {
+    semanticTokensProvider: {
+      legend: {
+        tokenTypes: ['variable', 'function', 'keyword', 'type', 'comment'],
+        tokenModifiers: ['declaration', 'readonly']
+      },
+      range: true // 或 full: true（全量更新）
+    }
+  }
+};
+实现语义令牌请求：
+
+typescript
+// 在 LSP 服务器中处理语义令牌请求
+connection.languages.semanticTokens.on(async (params) => {
+  const document = documents.get(params.textDocument.uri);
+  if (!document) return { data: [] };
+
+  // 使用 NDF 解析器获取 AST 和符号表
+  const ast = yourNdfParser.parse(document.getText());
+  const tokens = analyzeSemanticTokens(ast);
+
+  return { data: tokens };
+});
+生成令牌数据：
+
+typescript
+function analyzeSemanticTokens(ast: AST): number[] {
+  const tokens: number[] = [];
+  ast.traverse(node => {
+    if (node.type === 'Function') {
+      // 假设 node 包含位置信息 (line, startChar, length)
+      tokens.push(
+        node.line,          // 行号（相对于文档）
+        node.startChar,      // 起始列
+        node.length,         // 长度
+        tokenTypes.indexOf('function'), // 令牌类型索引
+        tokenModifiers.indexOf('declaration') // 修饰符索引
+      );
+    }
+  });
+  return tokens;
+}
+
+
+// -------------------------全局搜索---------------------------
+核心 API 与 LSP 方法
+workspace/symbol 请求：
+
+客户端发送 workspace/symbol 请求，服务器返回全局符号列表。
+
+适用于通过 Ctrl+P 或 Go to Symbol in Workspace 触发的全局符号搜索。
+
+实现示例：
+
+typescript
+// 在 Server 类中添加以下方法
+conn.onWorkspaceSymbol(params: WorkspaceSymbolParams): SymbolInformation[] {
+  // 从你的符号表中筛选匹配 params.query 的符号
+  return this.symbolTable.filter(symbol =>
+    symbol.name.toLowerCase().includes(params.query.toLowerCase())
+  );
+}
+textDocument/definition 和 textDocument/references：
+
+```typescript
+// API
+export interface WorkspaceSymbol extends BaseSymbolInformation {
+    /**
+     * 符号的位置。服务器是否允许在不返回范围的情况下返回位置取决于客户端
+     * 能力 `workspace.symbol.resolveSupport`。
+     *
+     * 参见 SymbolInformation#location 以获取更多详细信息。
+     */
+    location: Location | {
+        uri: DocumentUri;
+    };
+    /**
+     * 一个数据字段，在工作区符号请求和工作区符号解析请求之间，该字段会保留在工作区符号中。
+     */
+    data?: LSPAny;
+}
+```
+
+```typescript
+// API
+export interface SymbolInformation extends BaseSymbolInformation {
+    /**
+     * 表示该符号是否已被弃用。
+     *
+     * @deprecated 请改用 tags 替代
+     */
+    deprecated?: boolean;
+
+    /**
+     * 符号的定位信息。工具会使用该定位的范围值在编辑器中高亮显示对应位置。
+     * 当在工具中选中该符号时，范围的起始信息将用于定位光标。因此该范围通常不仅包含符号名称本身，
+     * 一般还会包含可见性修饰符等元素。
+     *
+     * 此范围不需要遵循抽象语法树中节点范围的表示规范，
+     * 因此不能用于重建符号的层级结构。
+     */
+    location: Location;
+}
+```
+
+解析符号的定义位置和引用位置（跨文件）。
+
+实现步骤：
+
+在解析代码时构建符号表（Symbol Table），记录符号的元数据（如作用域、文件 URI、位置等）。
+
+响应定义和引用请求时，从符号表中查询信息。
+
+实现步骤
+符号收集：
+
+在解析每个文件时（parse() 方法），遍历 AST 并记录符号信息（如类名、函数名、变量名）。
+
+示例符号表结构：
+
+typescript
+interface SymbolInfo {
+  name: string;
+  kind: SymbolKind; // 类型（如函数、类、变量）
+  location: Location; // 定义位置（URI + Range）
+  scope: string;     // 作用域（如全局、模块内）
+}
+private symbolTable: SymbolInfo[] = [];
+跨文件索引：
+
+监听工作区文件变更（onDidChangeWatchedFiles），在文件修改时重新解析并更新符号表。
+
+使用 WorkspaceFolder 或 workspace/workspaceFolders 请求获取工作区根目录，遍历所有相关文件。
+
+响应请求：
+
+实现 workspace/symbol、textDocument/definition 等 LSP 方法，返回符号信息。
+
+2. 通过 VSCode 扩展 API 直接实现
+如果你的目标是在扩展中直接操作全局符号（如自定义搜索逻辑），可以使用 VSCode 的扩展 API：
+
+核心 API
+vscode.workspace.findTextInFiles：
+
+基于正则表达式全局搜索文件内容。
+
+适用场景：简单的文本级符号匹配（如查找所有 console.log 调用）。
+
+示例：
+
+typescript
+import * as vscode from 'vscode';
+
+// 查找所有匹配的符号
+const results = await vscode.workspace.findTextInFiles(
+  { pattern: /myFunction/g }, // 正则表达式
+  {
+    include: '**/*.js',        // 文件通配符
+    exclude: '**/node_modules/**',
+    useRegExp: true,
+  }
+);
+
+// 处理结果
+results.matches.forEach(match => {
+  console.log(`Found in ${match.uri.fsPath} at ${match.ranges[0].start.line}`);
+});
+vscode.languages 命名空间：
+
+使用 vscode.languages.registerDocumentSymbolProvider 注册文档符号提供程序。
+
+结合 vscode.SymbolKind 定义符号类型（如类、函数）。
+
+示例：
+
+typescript
+vscode.languages.registerDocumentSymbolProvider('javascript', {
+  provideDocumentSymbols(document: vscode.TextDocument) {
+    // 解析文档并返回符号列表
+    return [
+      new vscode.SymbolInformation(
+        'myFunction',
+        vscode.SymbolKind.Function,
+        new vscode.Range(0, 0, 0, 10),
+        document.uri
+      ),
+    ];
+  },
+});
+最佳实践建议
+性能优化
+增量解析：仅解析已修改的文件，避免全量重建符号表。
+
+缓存机制：缓存符号表并监听文件变更事件（onDidChangeTextDocument、onDidSaveTextDocument）来更新缓存。
+
+异步处理：对大项目使用分块解析或后台线程。
+
+代码示例（LSP 服务器端）
+typescript
+// 在 Server 类中实现符号收集和响应
+export class Server {
+  private symbolTable: SymbolInformation[] = [];
+
+  // 解析文档时收集符号
+  private parse(text: string, uri: string): void {
+    const ast = parseAST(text);
+    traverseAST(ast, node => {
+      if (node.type === 'FunctionDeclaration') {
+        this.symbolTable.push({
+          name: node.name,
+          kind: SymbolKind.Function,
+          location: {
+            uri,
+            range: node.range,
+          },
+          containerName: '', // 可选（如所属类名）
+        });
+      }
+    });
+  }
+
+  // 响应 workspace/symbol 请求
+  conn.onWorkspaceSymbol(params: WorkspaceSymbolParams): SymbolInformation[] {
+    return this.symbolTable.filter(symbol =>
+      symbol.name.toLowerCase().includes(params.query.toLowerCase())
+    );
+  }
+}

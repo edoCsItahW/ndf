@@ -14,6 +14,28 @@
  * @copyrigh-t CC BY-NC-SA 2025. All rights reserved.
  * */
 
+import { Program } from "./ast";
+import { NDFError } from "../expection";
+import { Parser } from "./parser";
+import { Analyser, Scope } from "./analysis";
+import { tokenize } from "../lexer";
+
 export * from './ast';
 export * from './parser';
 export * from './analysis';
+
+
+export function parse(src: string): { ast: Program, errors: NDFError[] } {
+    const { tokens, errors } = tokenize(src);
+    const parser = new Parser(tokens);
+    const ast = parser.parse();
+    return { ast, errors: errors.concat(parser.errors) };
+}
+
+export function analyze(src: string): { scope: Scope, errors: NDFError[] } {
+    const { ast, errors } = parse(src);
+
+    const analyser = new Analyser(ast);
+    const scope = analyser.analyze();
+    return { scope, errors: errors.concat(analyser.errors) };
+}

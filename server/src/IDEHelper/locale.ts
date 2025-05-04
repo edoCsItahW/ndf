@@ -26,6 +26,10 @@ export const locales: ILocalePack = {
         NSI1: {
             "zh-CN": "NDF 解析器",
             "en-US": "NDF Parser"
+        },
+        NSE2: {
+            "zh-CN": "无效的导入路径'{0}'",
+            "en-US": "Invalid import path '{0}'"
         }
     },
     lexer: {
@@ -217,12 +221,18 @@ export const locales: ILocalePack = {
         NEA33: {
             "zh-CN": "无法对`非变量`类型进行赋值",
             "en-US": "Cannot assign to a non-variable type"
-        }
-    },
-    test: {
-        NT1: {
-            "zh-CN": "测试用例'{0}'失败",
-            "en-US": "Test case '{0}' failed"
+        },
+        NEA34: {
+            "zh-CN": "类型'{0}'不支持`属性访问`",
+            "en-US": "Type '{0}' does not support `property access`"
+        },
+        NEA35: {
+            "zh-CN": "类型'{0}'中不存在`属性'{1}'",
+            "en-US": "Property '{1}' does not exist on type '{0}'"
+        },
+        NEA36: {
+            "zh-CN": "类型'{0}'的构造器的参数类型应为'{1}',但当前是'{2}'",
+            "en-US": "The parameter type of the constructor of type '{0}' should be '{1}', but found '{2}'"
         }
     }
 };

@@ -1,0 +1,13 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <path d="M0,0 L40,0 60,100 0,100Z" fill="#6600f3"/> <!-- 蓝色梯形 -->
+    <path d="M40,0 100,0 100,100 60,100Z" fill="#9d0000"/> <!-- 红色梯形 -->
+
+    <!-- 金色字母N-->
+    <text x="50" y="58"
+          font-size="95"
+          font-weight="bold"
+          fill="gold"
+          text-anchor="middle"
+          dominant-baseline="middle"
+          font-family="Arial, sans-serif">N</text>
+</svg>

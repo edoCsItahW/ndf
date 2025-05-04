@@ -6,32 +6,67 @@
 // permission, please contact the author: 2207150234@st.sziit.edu.cn
 //
 
-import {isDigit, isHexDigit, isIdentifierChar, isLetter, isWhiteSpace, Pos} from "../utils";
 /**
  * @file lexer.ts
  * @author edocsitahw
  * @version 1.1
  * @date 2025/04/17 13:37
- * @desc
+ * @desc 定义了Lexer类，用于将源代码字符串解析为Token数组。
  * @copyright CC BY-NC-SA 2025. All rights reserved.
  * */
+import {isDigit, isHexDigit, isIdentifierChar, isLetter, isWhiteSpace, Pos} from "../utils";
 import {OPERATORS, Token, TokenCategory, TokenType, WHITESPACE_CHARS} from "./token";
-import {_SyntaxError} from "../expection";
 import {IPos, Nullable, PartialLocalet} from "../types";
-import {methodDebug} from "../debug";
+import {_SyntaxError} from "../expection";
 import { Locale } from "../IDEHelper";
+import {methodDebug} from "../debug";
 
 
+/**
+ * @func lexerDebug
+ * @summary 用于调试Lexer类的方法。
+ * @desc 该方法用于打印Lexer类的方法调用信息。
+ * @param {Lexer} obj - 要调试的Lexer对象。
+ * @param {string} fnName - 要调试的方法名。
+ * @remarks 一般配合methodDebug方法使用,而非手动调用
+ * @see methodDebug
+ * */
 function lexerDebug(obj: Lexer, fnName: string) {
     if (obj.debug)
         console.log(`Lexer.${fnName}()`);
 }
 
 
+/**
+ * @class Lexer
+ * @classDesc 词法分析器类。
+ * @desc 该类用于将源代码字符串解析为Token数组。
+ * @property {string} src - 源代码字符串。
+ * @property {Locale} locale - 语言环境。
+ * @property {boolean} debug - 是否开启调试模式。
+ * @property {_SyntaxError[]} errors - 错误列表。
+ * */
 export class Lexer {
+    /**
+     * @var pos
+     * @summary 当前位置。
+     * @private
+     * */
     private pos: Pos = new Pos();
+    /**
+     * @var errors
+     * @summary 错误列表
+     * @desc 该属性用于存储解析过程中出现的错误。
+     * @public
+     * */
     errors: _SyntaxError[] = [];
 
+    /**
+     * @constructor
+     * @param {string} src - 源代码字符串。
+     * @param {Locale} [locale] - 语言环境。
+     * @param {boolean} [debug=false] - debug模式。
+     * */
     constructor(public readonly src: string, private readonly locale?: Locale, public debug: boolean = false) {
     }
 
@@ -227,7 +262,7 @@ export class Lexer {
     private extractBlockComment(): Token {
         let value = this.current + "*";
         const start = this.pos.pos;
-        const comment = this.current;
+        const comment = this.current === '/' ? '/' : ')';
         this.pos.move(2);  // skip /* or (*
 
         while (this.inScope() && !(this.current === '*' && this.peek() === comment)) {

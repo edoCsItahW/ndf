@@ -26,7 +26,7 @@ export class Processor {
     constructor(private tokens: Token[]) {
     }
 
-    process(comment: boolean = true): Token[] {
+    process(): Token[] {
         const result: Token[] = [];
 
         while (this.inScope()) {
@@ -35,8 +35,7 @@ export class Processor {
             if (!tk)
                 break;
 
-            if (comment || tk.category !== TokenCategory.COMMENT)
-                result.push(tk);
+            result.push(tk);
         }
 
         return result;

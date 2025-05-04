@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      murmurhash-js:
+        specifier: ^1.0.0
+        version: 1.0.0
       vscode-languageserver:
         specifier: ^9.0.1
         version: 9.0.1
@@ -16,6 +19,9 @@ importers:
         version: 1.0.12
 
 packages:
+
+  murmurhash-js@1.0.0:
+    resolution: {integrity: sha512-TvmkNhkv8yct0SVBSy+o8wYzXjE4Zz3PCesbfs8HiCXXdcTuocApFv11UWlNFWKYsP2okqrhb7JNlSm9InBhIw==}
 
   vscode-jsonrpc@8.2.0:
     resolution: {integrity: sha512-C+r0eKJUIfiDIfwJhria30+TYWPtuHJXHtI7J0YlOmKAo7ogxP20T0zxB7HZQIFhIyvoBPwWskjxrvAtfjyZfA==}
@@ -35,6 +41,8 @@ packages:
     hasBin: true
 
 snapshots:
+
+  murmurhash-js@1.0.0: {}
 
   vscode-jsonrpc@8.2.0: {}
 

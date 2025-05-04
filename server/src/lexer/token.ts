@@ -14,8 +14,8 @@
  * @desc 定义令牌相关类
  * @copyright CC BY-NC-SA 2024. All rights reserved.
  * */
-import {IPos} from "../types";
-import {enumToStr} from "../utils";
+import { IPos } from "../types";
+import { enumToStr } from "../utils";
 
 
 /**
@@ -187,128 +187,188 @@ export enum TokenType {
 }
 
 
+/**
+ * @enum TokenCategory
+ * @summary 令牌类别枚举
+ * @property KEYWORD 关键字
+ * @property OPERATOR 操作符
+ * @property LITERAL 字面量
+ * @property COMMENT 注释
+ * @property WHITESPACE 空白字符
+ * @property OTHER 其他
+ * @property INVALID 无效
+ * */
 export enum TokenCategory {
+    /** 关键字 */
     KEYWORD,
+    /** 操作符 */
     OPERATOR,
+    /** 字面量 */
     LITERAL,
+    /** 注释 */
     COMMENT,
+    /** 空白字符 */
     WHITESPACE,
+    /** 其他 */
     OTHER,
+    /** 无效 */
     INVALID
 }
 
 
+/**
+ * @const {Map<string, TokenType>} OPERATORS
+ * @summary 操作符映射表
+ * @desc 用于将字符串形式的操作符映射到对应的令牌类型
+ * */
 export const OPERATORS: Map<string, TokenType> = new Map([
-    ['+', TokenType.ADD],
-    ['-', TokenType.SUB],
-    ['*', TokenType.MUL],
-    ['/', TokenType.DIV],
-    ['%', TokenType.MOD],
-    ['?', TokenType.QUESTION],
-    [':', TokenType.COLON],
-    ['=', TokenType.ASSIGN],
-    ['|', TokenType.BIN_OR],
-    ['&', TokenType.BIN_AND],
-    ['<', TokenType.LT],
-    ['>', TokenType.GT],
-    ['<=', TokenType.LE],
-    ['>=', TokenType.GE],
-    ['==', TokenType.EQ],
-    ['!=', TokenType.NE],
-    ['!', TokenType.NOT],
-    ['(', TokenType.LPAREN],
-    [')', TokenType.RPAREN],
-    ['{', TokenType.LBRACE],
-    ['}', TokenType.RBRACE],
-    ['[', TokenType.LBRACKET],
-    [']', TokenType.RBRACKET],
-    [',', TokenType.COMMA],
-    ['.', TokenType.DOT],
-    ['$', TokenType.DOLLAR],
-    ['~', TokenType.TILDE],
-    ['div', TokenType.KW_DIV],
+    ["+", TokenType.ADD],
+    ["-", TokenType.SUB],
+    ["*", TokenType.MUL],
+    ["/", TokenType.DIV],
+    ["%", TokenType.MOD],
+    ["?", TokenType.QUESTION],
+    [":", TokenType.COLON],
+    ["=", TokenType.ASSIGN],
+    ["|", TokenType.BIN_OR],
+    ["&", TokenType.BIN_AND],
+    ["<", TokenType.LT],
+    [">", TokenType.GT],
+    ["<=", TokenType.LE],
+    [">=", TokenType.GE],
+    ["==", TokenType.EQ],
+    ["!=", TokenType.NE],
+    ["!", TokenType.NOT],
+    ["(", TokenType.LPAREN],
+    [")", TokenType.RPAREN],
+    ["{", TokenType.LBRACE],
+    ["}", TokenType.RBRACE],
+    ["[", TokenType.LBRACKET],
+    ["]", TokenType.RBRACKET],
+    [",", TokenType.COMMA],
+    [".", TokenType.DOT],
+    ["$", TokenType.DOLLAR],
+    ["~", TokenType.TILDE],
+    ["div", TokenType.KW_DIV]
 ]);
 
 
+/**
+ * @const {Map<string, TokenType>} KEYWORDS
+ * @summary 关键字映射表
+ * @desc 用于将字符串形式的关键字映射到对应的令牌类型
+ * */
 export const KEYWORDS: Map<string, TokenType> = new Map([
-    ['int', TokenType.KW_INT],
-    ['float', TokenType.KW_FLOAT],
-    ['string', TokenType.KW_STRING],
-    ['bool', TokenType.KW_BOOL],
-    ['is', TokenType.KW_IS],
-    ['export', TokenType.KW_EXPORT],
-    ['nil', TokenType.KW_NIL],
-    ['true', TokenType.KW_TRUE],
-    ['false', TokenType.KW_FALSE],
-    ['div', TokenType.KW_DIV],
-    ['map', TokenType.KW_MAP],
-    ['template', TokenType.KW_TEMPLATE],
-    ['unnamed', TokenType.KW_UNNAMED],
-    ['private', TokenType.KW_PRIVATE]
+    ["int", TokenType.KW_INT],
+    ["float", TokenType.KW_FLOAT],
+    ["string", TokenType.KW_STRING],
+    ["bool", TokenType.KW_BOOL],
+    ["is", TokenType.KW_IS],
+    ["export", TokenType.KW_EXPORT],
+    ["nil", TokenType.KW_NIL],
+    ["true", TokenType.KW_TRUE],
+    ["false", TokenType.KW_FALSE],
+    ["div", TokenType.KW_DIV],
+    ["map", TokenType.KW_MAP],
+    ["template", TokenType.KW_TEMPLATE],
+    ["unnamed", TokenType.KW_UNNAMED],
+    ["private", TokenType.KW_PRIVATE]
 ]);
 
 
+/**
+ * @const {Map<TokenType, string>} INVERSE_OPERATORS
+ * @summary 反向操作符映射表
+ * @desc 用于将令牌类型映射到对应的字符串形式的操作符
+ * */
 export const INVERSE_OPERATORS = new Map<TokenType, string>([
-    [TokenType.ADD, '+'],
-    [TokenType.SUB, '-'],
-    [TokenType.MUL, '*'],
-    [TokenType.DIV, '/'],
-    [TokenType.MOD, '%'],
-    [TokenType.QUESTION, '?'],
-    [TokenType.COLON, ':'],
-    [TokenType.ASSIGN, '='],
-    [TokenType.BIN_OR, '|'],
-    [TokenType.BIN_AND, '&'],
-    [TokenType.LT, '<'],
-    [TokenType.GT, '>'],
-    [TokenType.LE, '<='],
-    [TokenType.GE, '>='],
-    [TokenType.EQ, '=='],
-    [TokenType.NE, '!='],
-    [TokenType.NOT, '!'],
-    [TokenType.LPAREN, '('],
-    [TokenType.RPAREN, ')'],
-    [TokenType.LBRACE, '{'],
-    [TokenType.RBRACE, '}'],
-    [TokenType.LBRACKET, '['],
-    [TokenType.RBRACKET, ']'],
-    [TokenType.COMMA, ','],
-    [TokenType.DOT, '.'],
-    [TokenType.DOLLAR, '$'],
-    [TokenType.TILDE, '~'],
-    [TokenType.KW_DIV, 'div']
+    [TokenType.ADD, "+"],
+    [TokenType.SUB, "-"],
+    [TokenType.MUL, "*"],
+    [TokenType.DIV, "/"],
+    [TokenType.MOD, "%"],
+    [TokenType.QUESTION, "?"],
+    [TokenType.COLON, ":"],
+    [TokenType.ASSIGN, "="],
+    [TokenType.BIN_OR, "|"],
+    [TokenType.BIN_AND, "&"],
+    [TokenType.LT, "<"],
+    [TokenType.GT, ">"],
+    [TokenType.LE, "<="],
+    [TokenType.GE, ">="],
+    [TokenType.EQ, "=="],
+    [TokenType.NE, "!="],
+    [TokenType.NOT, "!"],
+    [TokenType.LPAREN, "("],
+    [TokenType.RPAREN, ")"],
+    [TokenType.LBRACE, "{"],
+    [TokenType.RBRACE, "}"],
+    [TokenType.LBRACKET, "["],
+    [TokenType.RBRACKET, "]"],
+    [TokenType.COMMA, ","],
+    [TokenType.DOT, "."],
+    [TokenType.DOLLAR, "$"],
+    [TokenType.TILDE, "~"],
+    [TokenType.KW_DIV, "div"]
 ]);
 
+
+/**
+ * @const {Map<TokenType, string>} INVERSE_KEYWORDS
+ * @summary 反向关键字映射表
+ * @desc 用于将令牌类型映射到对应的字符串形式的关键字
+ * */
 export const INVERSE_KEYWORDS = new Map<TokenType, string>([
-    [TokenType.KW_INT, 'int'],
-    [TokenType.KW_FLOAT, 'float'],
-    [TokenType.KW_STRING,'string'],
-    [TokenType.KW_BOOL, 'bool'],
-    [TokenType.KW_IS, 'is'],
-    [TokenType.KW_EXPORT, 'export'],
-    [TokenType.KW_NIL, 'nil'],
-    [TokenType.KW_TRUE, 'true'],
-    [TokenType.KW_FALSE, 'false'],
-    [TokenType.KW_DIV, 'div'],
-    [TokenType.KW_MAP,'MAP'],
-    [TokenType.KW_TEMPLATE, 'template'],
-    [TokenType.KW_UNNAMED, 'unnamed'],
-    [TokenType.KW_PRIVATE, 'private']
+    [TokenType.KW_INT, "int"],
+    [TokenType.KW_FLOAT, "float"],
+    [TokenType.KW_STRING, "string"],
+    [TokenType.KW_BOOL, "bool"],
+    [TokenType.KW_IS, "is"],
+    [TokenType.KW_EXPORT, "export"],
+    [TokenType.KW_NIL, "nil"],
+    [TokenType.KW_TRUE, "true"],
+    [TokenType.KW_FALSE, "false"],
+    [TokenType.KW_DIV, "div"],
+    [TokenType.KW_MAP, "MAP"],
+    [TokenType.KW_TEMPLATE, "template"],
+    [TokenType.KW_UNNAMED, "unnamed"],
+    [TokenType.KW_PRIVATE, "private"]
 ]);
 
+
+/**
+ * @const {Map<string, string>} WHITESPACE_CHARS
+ * @summary 空白字符映射表
+ * @desc 用于将字符串形式的空白字符映射到对应的单字符形式
+ * */
 export const WHITESPACE_CHARS: Map<string, string> = new Map([
-    ['\n', 'n'],
-    ['\r', 'r'],
-    ['\t', 't'],
-    ['\b', 'b']
+    ["\n", "n"],
+    ["\r", "r"],
+    ["\t", "t"],
+    ["\b", "b"]
 ]);
 
 
+/**
+ * @class Token
+ * @classdesc 令牌类
+ * @property type {TokenType} 令牌类型
+ * @property pos {IPos} 令牌位置
+ * @property value {string} 令牌值
+ * @property category {TokenCategory} 令牌类别
+ * */
 export class Token {
-    constructor(public type: TokenType, public pos: IPos, public value: string = '', public category: TokenCategory = TokenCategory.OTHER) {
+    /**
+     * @constructor
+     * @param {TokenType} type 令牌类型
+     * @param {IPos} pos 令牌位置
+     * @param {string} [value=''] 令牌值
+     * @param {TokenCategory} [category=TokenCategory.OTHER] 令牌类别
+     * */
+    constructor(public type: TokenType, public pos: IPos, public value: string = "", public category: TokenCategory = TokenCategory.OTHER) {
     }
 
     toString(): string {
-        return `<('${this.value}': ${enumToStr(TokenType, this.type)}) Token at ${this.pos.line}:${this.pos.column}>`
+        return `<('${this.value}': ${enumToStr(TokenType, this.type)}) Token at ${this.pos.line}:${this.pos.column}>`;
     }
 }

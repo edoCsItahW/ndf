@@ -1,9 +1,10 @@
 {
 	"name": "ndf",
-	"description": "ndf language is a scripting language used to describe game data.",
+	"displayName": "NDF",
+	"description": "The NDF language is a scripting language used to describe game data, and this extension provides partial support for the language.",
 	"author": "SongTao Xiao",
 	"license": "CC BY-NC-SA 4.0",
-	"version": "2.1.1",
+	"version": "2.2.2",
 	"publisher": "2207150234",
 	"repository": {
 		"type": "git",
@@ -13,13 +14,22 @@
 		"Programming Languages"
 	],
 	"keywords": [
-		"multi-root ready"
+		"WARNO",
+		"NDF"
 	],
 	"engines": {
 		"vscode": "^1.75.0"
 	},
 	"activationEvents": [],
 	"main": "./client/out/extension",
+	"icon": "icon.png",
+	"screenshots": [
+		"static/highlight.png",
+		"static/hover.png",
+		"static/level.png",
+		"static/locale.png",
+		"static/report.png"
+	],
 	"contributes": {
 		"languages": [
 			{
@@ -38,6 +48,13 @@
 				"language": "ndf",
 				"scopeName": "source.ndf",
 				"path": "./syntaxes/ndf.tmLanguage.json"
+			}
+		],
+		"iconThemes": [
+			{
+				"id": "ndf-icon",
+				"label": "NDF",
+				"path": "./themes/ndf-icon.json"
 			}
 		],
 		"configuration": {
@@ -74,6 +91,30 @@
 					],
 					"default": "loose",
 					"description": "The level of strictness used by the NDF parser.(NDF解析器使用的严格程度。)"
+				},
+				"ndf.globalSearch": {
+					"type": "boolean",
+					"default": true,
+					"description": "Whether to enable global search.(是否启用全局搜索。)"
+				},
+				"ndf.processNumber": {
+					"type": "number",
+					"default": 3,
+					"description": "NDF parser uses the number of processes used to build the global symbol cache.(NDF解析器在构建全局符号缓存时使用的进程数。)"
+				},
+				"ndf.threadNumber": {
+					"type": "number",
+					"description": "NDF parser uses the number of threads used by each sub-process to build the global symbol cache. The default value is CPU cores divided by 2.(NDF解析器在构建全局符号缓存时每个子进程使用的线程数,默认为CPU核数/2。)"
+				},
+				"ndf.asyncWorkerNumber": {
+					"type": "number",
+					"default": 10,
+					"description": "The number of asynchronous workers used by the NDF parser to parse the script. The default value is 10.(NDF解析器使用的异步工作线程数,默认值为10。)"
+				},
+				"ndf.autoSpawnImport": {
+					"type": "boolean",
+					"default": true,
+					"description": "Whether to inject import comments in the code when a symbol is found in the global symbol cache.(在全局符号缓存中找到符号时是否在代码中注入导入注释.)"
 				}
 			}
 		}
@@ -88,6 +129,8 @@
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.13.0",
+		"@microsoft/api-extractor": "^7.52.7",
+		"@microsoft/tsdoc": "^0.15.1",
 		"@stylistic/eslint-plugin": "^2.9.0",
 		"@types/mocha": "^10.0.6",
 		"@types/node": "^20",

@@ -65,6 +65,12 @@ export class _TypeError extends NDFError {
     }
 }
 
+export class ImportError extends NDFError {
+    constructor(protected _message: string, public start: IPos, public end: IPos) {
+        super(_message, start, end);
+    }
+}
+
 export abstract class NDFWarning extends NDFError {
     protected constructor(protected _message: string, public start: IPos, public end: IPos) {
         super(_message, start, end);

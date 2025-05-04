@@ -14,7 +14,8 @@
  * @desc
  * @copyright CC BY-NC-SA 2025. All rights reserved.
  * */
-import {IPos} from "./types";
+import { IPos } from "./types";
+import serializeJavascript = require("serialize-javascript");
 
 
 /**
@@ -31,9 +32,12 @@ import {IPos} from "./types";
  *     \@propertyGuard accessor x: number = 0;
  * }
  * */
-function propertyGuard<This extends object, Value>(target: ClassAccessorDecoratorTarget<This, Value>, {kind, name}: ClassAccessorDecoratorContext): ClassAccessorDecoratorResult<This, Value> {
-    if (kind === 'accessor') {
-        const {get, set} = target;
+function propertyGuard<This extends object, Value>(target: ClassAccessorDecoratorTarget<This, Value>, {
+    kind,
+    name
+}: ClassAccessorDecoratorContext): ClassAccessorDecoratorResult<This, Value> {
+    if (kind === "accessor") {
+        const { get, set } = target;
 
         return {
             get(this: This): Value {
@@ -43,7 +47,7 @@ function propertyGuard<This extends object, Value>(target: ClassAccessorDecorato
             set(this: This, value: Value) {
                 throw new Error(`Cannot set property '${String(name)}' of ${this.constructor.name}`);
             }
-        }
+        };
     }
     return target;
 }
@@ -67,7 +71,7 @@ export class Pos {
     }
 
     get pos(): IPos {
-        return {line: this.line, column: this.column};
+        return { line: this.line, column: this.column };
     }
 
     newline() {
@@ -109,9 +113,74 @@ export function isWhiteSpace(char: string): boolean {
 }
 
 export function isIdentifierChar(char: string): boolean {
-    return isLetter(char) || isDigit(char) || char === '_';
+    return isLetter(char) || isDigit(char) || char === "_";
 }
 
 export function unified(identifier: string): boolean {
     return identifier === identifier.toUpperCase() || identifier === identifier.toLowerCase();
+}
+
+
+export function serialize(msg: any): string {
+    return JSON.stringify(msg);
+}
+
+export function deserialize(msg: string): any {
+    return JSON.parse(msg);
+}
+
+export function serializeSafe(msg: any): string {
+    const handler = (value: any) => {
+        if (typeof value === "function")
+            if (value.__MODULE_MARKER__)
+                return JSON.stringify({
+                    __type: "MODULE_FUNCTION",
+                    __path: value.__MODULE_PATH__,
+                    __name: value.__FUNCTION_NAME__
+                });
+            else
+                return serializeJavascript(value, { space: 4, isJSON: false, ignoreFunction: false })
+
+        return value;
+    }
+
+    if (typeof msg === "object")
+        return JSON.stringify(msg, (_, value) => handler(value));
+
+    return handler(msg);
+}
+
+export function serializeFuncWarpper<T extends Function>(fn: T, fileName: string): T {
+    return Object.assign(fn, {
+        __MODULE_MARKER__: true,
+        __MODULE_PATH__: fileName,
+        __FUNCTION_NAME__: fn.name
+    });
+}
+
+export function deserializeSafe(msg: string): any {
+    if (msg.startsWith("{") && msg.endsWith("}")) {  // Object
+        const obj = JSON.parse(msg, (_, value) => {
+            if (typeof value === "string" && value.startsWith("{") && value.endsWith("}"))
+                return deserializeSafe(value);
+
+            return value;
+        });
+
+        if (obj.__type === "MODULE_FUNCTION")
+            return require(obj.__path)[obj.__name];
+
+        return obj;
+    }
+
+    try {
+        const meybeFunc = eval(`(${msg})`);
+
+        if (typeof meybeFunc === "function")
+            return meybeFunc;
+
+        return JSON.parse(msg);
+    } catch (e) {
+        return msg;
+    }
 }

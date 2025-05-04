@@ -3,8 +3,7 @@
 // (Creative Commons Attribution-NonCommercial-NoDerivatives) License, By Xiao Songtao.
 // This software is protected by copyright law. Reproduction, distribution, or use for commercial
 // purposes is prohibited without the author's permission. If you have any questions or require
-// permission, please contact the author: 2207150234@st.sziit.edu.cn
-//
+// permission, please contact the author: 2207150234@st.szii-t.edu.cn
 
 
 /**
@@ -20,9 +19,9 @@ import {
     Assignment,
     BinaryExpr,
     Bool,
-    BuiltinType,
+    BuiltinType, CommenComment, Comment,
     ErrorExpr,
-    Expression,
+    Expression, FileImportComment,
     Float,
     GenericType,
     GuidCall,
@@ -32,7 +31,7 @@ import {
     InternalExpression,
     InternalNode,
     LeafExpression,
-    LeafNode,
+    LeafNode, LibImportComment,
     Literal,
     MapDef,
     MemberAccess,
@@ -50,21 +49,38 @@ import {
     TemplateDef,
     TemplateParam,
     TernaryExpr,
-    TypeInitializer,
+    TypeConstructor,
     TypeRef,
     UnaryExpr,
     UnnamedObj,
     VectorDef
 } from "./ast";
-import { BaseType, GeneralAST, IAnalyser, IPos, IType, Nullable, PartialLocalet } from "../types";
-import {_TypeError, DefineError, NameWarning, NDFError, ReferenceWarning} from "../expection";
-import {methodDebug, traceback, regexStack} from "../debug";
-import {enumToStr} from "../utils";
+import {
+    BaseType,
+    GeneralAST,
+    IAnalyser,
+    IPos,
+    IType,
+    Nullable,
+    PartialLocalet,
+    ITypeJSON,
+    ITemplateTypeJSON,
+    IObjectTypeJSON,
+    IGenericTypeJSON,
+    IVectorTypeJSON,
+    IMapTypeJSON,
+    IPairTypeJSON,
+    ISymbolJSON,
+    IScopeJSON
+} from "../types";
+import { _TypeError, DefineError, ImportError, NameWarning, NDFError, ReferenceWarning } from "../expection";
+import { methodDebug, traceback } from "../debug";
+import { enumToStr } from "../utils";
 import { Locale } from "../IDEHelper";
 
 
 function endPos(node: LeafNode | InternalNode): IPos {
-    return {line: node.pos.line, column: node.pos.column + node.toString().length};
+    return { line: node.pos.line, column: node.pos.column + node.toString().length };
 }
 
 
@@ -76,19 +92,19 @@ export function typeToStr(type: IType): string {
 
     switch (type.type) {
         case BaseType.VECTOR:
-            return type instanceof _GenericType ? `LIST<${type.params.map(typeToStr).join(" | ")}>` : "vector";
+            return type instanceof VectorType ? `LIST<${type.elementType!.map(typeToStr).join(" | ")}>` : "vector";
         case BaseType.MAP:
-            return type instanceof _GenericType ? `MAP<${type.params.map(typeToStr).join(" | ")}>` : "map";
+            return type instanceof MapType ? `MAP<${type.keyType!.map(typeToStr).join(" | ")}, ${type.valueType!.map(typeToStr).join(" | ")}>` : "map";
         case BaseType.PAIR:
-            return type instanceof _GenericType ? `PAIR<${type.params.map(typeToStr).join(",")}>` : "pair";
+            return type instanceof PairType ? `PAIR<${typeToStr(type.keyType!)}, ${typeToStr(type.valueType!)}>` : "pair";
         case BaseType.OBJECT:
-            return type.name || 'object';
+            return type.name || "object";
         case BaseType.TEMPLATE:
-            return type.name || 'template';
+            return type.name || "template";
         case BaseType.GENERIC:
             return type instanceof _GenericType ? `${type.name}<${type.params.map(typeToStr).join(",")}>` : "generic";
         default:
-            return 'unknown';
+            return "unknown";
     }
 }
 
@@ -117,6 +133,8 @@ export function typeToStr(type: IType): string {
  * @see Analyser
  * */
 export class Type implements IType {
+    static readonly instances: Map<BaseType, Type> = new Map();
+
     /**
      * @constructor
      * @param {BaseType} type - 基本类型枚举
@@ -124,6 +142,13 @@ export class Type implements IType {
      * 常用于非基本类型,如ObjectType,TemplateType等.
      * */
     constructor(public type: BaseType, public name?: string) {
+        if ([BaseType.INT, BaseType.FLOAT, BaseType.STRING, BaseType.BOOLEAN,
+            BaseType.NIL, BaseType.ANY, BaseType.UNKNOWN, BaseType.ERROR].includes(type)) {
+            if (Type.instances.has(type))
+                return Type.instances.get(type)!;
+            else
+                Type.instances.set(type, this);
+        }
     }
 
     /**
@@ -159,6 +184,17 @@ export class Type implements IType {
             && gen1Type.params.length === gen2Type.params.length) {
             return gen1Type.params.some(type => gen2Type.params.some(t => Type.isCompatible(type, t)));
         }
+
+        else if (gen1Type instanceof VectorType && gen2Type instanceof VectorType)
+            return gen1Type.elementType!.some(type => gen2Type.elementType!.some(t => Type.isCompatible(type, t)));
+
+        else if (gen1Type instanceof MapType && gen2Type instanceof MapType)
+            return gen1Type.keyType!.some(keyType => gen2Type.keyType!.some(t => Type.isCompatible(keyType, t)))
+                && gen1Type.valueType!.some(valueType => gen2Type.valueType!.some(t => Type.isCompatible(valueType, t)));
+
+        else if (gen1Type instanceof PairType && gen2Type instanceof PairType)
+            return Type.isCompatible(gen1Type.keyType!, gen2Type.keyType!) && Type.isCompatible(gen1Type.valueType!, gen2Type.valueType!);
+
         return false;
     }
 
@@ -194,7 +230,7 @@ export class Type implements IType {
                 return true;
             else if (type1.type === BaseType.ANY || type2.type === BaseType.ANY)
                 return true;
-            else if (type1.type === BaseType.UNKNOW || type2.type === BaseType.UNKNOW)
+            else if (type1.type === BaseType.UNKNOWN || type2.type === BaseType.UNKNOWN)
                 return true;
             else if (type1.type === BaseType.OBJECT && type2.type === BaseType.NIL)
                 return true;
@@ -206,6 +242,21 @@ export class Type implements IType {
     toString(): string {
         return `<Type: ${typeToStr(this)}, name: ${this.name}>`;
     }
+
+    toJSON(safe: boolean = false): ITypeJSON {
+        return {
+            type: this.type,
+            name: this.name
+        };
+    }
+
+    static toType(type: IType): Type {
+        return new Type(type.type, type.name);
+    }
+
+    static fromJSON(obj: ITypeJSON): Type {
+        return new Type(obj.type, obj.name);
+    }
 }
 
 
@@ -213,12 +264,38 @@ export class TemplateType extends Type {
     params: Map<string, Type> = new Map();
     prototypeScope: Nullable<Scope>;
 
-    constructor(public type: BaseType, public name?: string) {
+    constructor(public type: BaseType = BaseType.TEMPLATE, public name?: string) {
         super(type, name);
     }
 
     toString(): string {
         return `<TemplateType: ${typeToStr(this)}, name: ${this.name}, params: [${this.params}]>`;
+    }
+
+    toJSON(safe: boolean = false): ITemplateTypeJSON {
+        return {
+            name: this.name!,
+            type: this.type,
+            params: Object.entries(Object.fromEntries(this.params)).reduce((acc, [key, value]) => {
+                acc[key] = value.toJSON(safe);
+                return acc;
+            }, {} as Record<string, ITypeJSON>),
+            prototypeScope: this.prototypeScope?.toJSON(safe)
+        };
+    }
+
+    static fromJSON(obj: ITemplateTypeJSON): TemplateType {
+        const templateType = new TemplateType(obj.type, obj.name);
+
+        templateType.params = Object.entries(obj.params).reduce((acc, [key, value]) => {
+            acc.set(key, Type.fromJSON(value));
+            return acc;
+        }, new Map<string, Type>());
+
+        if (obj.prototypeScope)
+            templateType.prototypeScope = Scope.fromJSON(obj.prototypeScope);
+
+        return templateType;
     }
 }
 
@@ -233,20 +310,141 @@ export class ObjectType extends Type {
     toString(): string {
         return `<ObjectType: ${typeToStr(this)}, name: ${this.name}>`;
     }
+
+    toJSON(safe: boolean = false): IObjectTypeJSON {
+        return {
+            name: this.name!,
+            type: this.type,
+            prototypeScope: this.prototypeScope?.toJSON(safe)
+        };
+    }
+
+    static fromJSON(obj: IObjectTypeJSON): ObjectType {
+        const objectType = new ObjectType(obj.type, obj.name);
+
+        if (obj.prototypeScope)
+            objectType.prototypeScope = Scope.fromJSON(obj.prototypeScope);
+
+        return objectType;
+    }
 }
 
 
 export class _GenericType extends Type {
     params: Type[] = [];
 
-    constructor(public type: BaseType, public name?: string) {
+    constructor(public type: BaseType = BaseType.GENERIC, public name?: string) {
         super(type, name);
+    }
+
+    toJSON(safe: boolean = false): IGenericTypeJSON {
+        return {
+            name: this.name!,
+            type: this.type,
+            params: this.params.map(p => p.toJSON(safe))
+        };
+    }
+
+    static fromJSON(obj: IGenericTypeJSON): _GenericType {
+        const genericType = new _GenericType(obj.type, obj.name);
+
+        genericType.params = obj.params.map(p => Type.fromJSON(p));
+
+        return genericType;
+    }
+}
+
+
+export class VectorType extends Type {
+    elementType: Nullable<Type[]>;
+
+    constructor(public type: BaseType = BaseType.VECTOR, public name?: string) {
+        super(type, name);
+    }
+
+    toJSON(safe: boolean = false): IVectorTypeJSON {
+        return {
+            name: this.name,
+            type: this.type,
+            elementType: this.elementType?.map(t => t.toJSON(safe))
+        };
+    }
+
+    static fromJSON(obj: IVectorTypeJSON): VectorType {
+        const vectorType = new VectorType(obj.type, obj.name);
+
+        if (obj.elementType)
+            vectorType.elementType = obj.elementType.map(t => Type.fromJSON(t));
+
+        return vectorType;
+    }
+}
+
+
+export class MapType extends Type {
+    keyType: Nullable<Type[]>;
+    valueType: Nullable<Type[]>;
+
+    constructor(public type: BaseType = BaseType.MAP, public name?: string) {
+        super(type, name);
+    }
+
+    toJSON(safe: boolean = false): IMapTypeJSON {
+        return {
+            name: this.name,
+            type: this.type,
+            keyType: this.keyType?.map(t => t.toJSON(safe)),
+            valueType: this.valueType?.map(t => t.toJSON(safe))
+        };
+    }
+
+    static fromJSON(obj: IMapTypeJSON): MapType {
+        const mapType = new MapType(obj.type, obj.name);
+
+        if (obj.keyType)
+            mapType.keyType = obj.keyType.map(t => Type.fromJSON(t));
+
+        if (obj.valueType)
+            mapType.valueType = obj.valueType.map(t => Type.fromJSON(t));
+
+        return mapType;
+    }
+}
+
+
+export class PairType extends Type {
+    keyType: Nullable<Type>;
+    valueType: Nullable<Type>;
+
+    constructor(public type: BaseType = BaseType.PAIR, public name?: string) {
+        super(type, name);
+    }
+
+    toJSON(safe: boolean = false): IPairTypeJSON {
+        return {
+            name: this.name,
+            type: this.type,
+            keyType: this.keyType?.toJSON(safe),
+            valueType: this.valueType?.toJSON(safe)
+        };
+    }
+
+    static fromJSON(obj: IPairTypeJSON): PairType {
+        const pairType = new PairType(obj.type, obj.name);
+
+        if (obj.keyType)
+            pairType.keyType = Type.fromJSON(obj.keyType);
+
+        if (obj.valueType)
+            pairType.valueType = Type.fromJSON(obj.valueType);
+
+        return pairType;
     }
 }
 
 
 export class Symbol {
-    private _type: Type = {type: BaseType.UNKNOW};
+    private _type: Type = new Type(BaseType.UNKNOWN);
 
     constructor(public readonly name: string, public readonly pos: IPos, type?: Type) {
         if (type)
@@ -258,7 +456,7 @@ export class Symbol {
     }
 
     set type(value: Type) {
-        if (value === undefined || !(value as object).hasOwnProperty('type')) {
+        if (value === undefined || !(value as object).hasOwnProperty("type")) {
             console.warn(`Warning: Symobl.type 被设置为非法值: ${value}`);
             return;
         }
@@ -266,14 +464,29 @@ export class Symbol {
     }
 
     toString(): string {
-        return `<Symbol: ${this.name}, type: ${this.type} in [${this.pos.line}:${this.pos.column}]>`
+        return `<Symbol: ${this.name}, type: ${this.type} in [${this.pos.line}:${this.pos.column}]>`;
+    }
+
+    toJSON(safe: boolean = false): ISymbolJSON {
+        return {
+            name: this.name,
+            pos: safe ? { line: this.pos.line, column: this.pos.column } : this.pos,
+            type: this.type.toJSON(safe)
+        };
+    }
+
+    static fromJSON(obj: ISymbolJSON): Symbol {
+        return new Symbol(obj.name, obj.pos, Type.fromJSON(obj.type));
     }
 }
 
 
-type ScopeKind = 'global' | 'template' | 'prototype' | 'local';
+type ScopeKind = "global" | "template" | "prototype" | "local";
+
 
 let id: number = 0;
+
+
 export class Scope {
     private symbols: Map<string, Symbol> = new Map();
     parent: Nullable<Scope>;
@@ -284,7 +497,7 @@ export class Scope {
 
     constructor(symbols: Array<Symbol>, kind?: string);
     constructor(parent?: Scope, kind?: string);
-    constructor(symbolsOrParent?: Scope | Array<Symbol>, public readonly kind: ScopeKind = 'local') {
+    constructor(symbolsOrParent?: Scope | Array<Symbol>, public readonly kind: ScopeKind = "local") {
         if (Array.isArray(symbolsOrParent))
             symbolsOrParent.forEach(symbol => this.define(symbol));
 
@@ -304,7 +517,7 @@ export class Scope {
 
     lookup(name: string, stop?: ScopeKind): Nullable<Symbol>;
     lookup(name: string, allow: ScopeKind[]): Nullable<Symbol>;
-    lookup(name: string, stopOrAllow: ScopeKind | ScopeKind[] = 'global'): Nullable<Symbol> {
+    lookup(name: string, stopOrAllow: ScopeKind | ScopeKind[] = "global"): Nullable<Symbol> {
         let current: Nullable<Scope> = this;
         while (current) {
             const symbol = current.resolve(name);
@@ -320,34 +533,68 @@ export class Scope {
         }
     }
 
-    toJSON(): object {
+    toJSON(safe: boolean = false): IScopeJSON {
         return {
             kind: this.kind,
-            symbols: Object.fromEntries(this.symbols),
-            parent: this.parent?.toJSON()
+            id: this.id,
+            symbols: Object.entries(Object.fromEntries(this.symbols)).reduce((acc, [key, value]) => {
+                acc[key] = value.toJSON(safe);
+                return acc;
+            }, {} as Record<string, ISymbolJSON>),
+            parent: safe ? this.parent?.id : this.parent?.toJSON()
         };
+    }
+
+    static fromJSON(obj: IScopeJSON): Scope {
+        const scope = new Scope(Object.values(obj.symbols).map(s => Symbol.fromJSON(s)), obj.kind);
+        scope.id = obj.id;
+
+        return scope;  // TODO: parent id
     }
 }
 
 
 function analyserDebug(obj: Analyser, fnName: string, msg: string) {
-//    if (obj.debug) {
-//        console.log(`(Parser.${fnName}): `, obj.currentScope.symbols, ` - ${msg}`);
-//    }
+    if (obj.debug) {
+        console.log(`(Parser.${fnName}): ${msg}`);
+    }
 }
+
+type SymbolCallback = (name: string) => Nullable<Symbol>;
+type ImportCallback = (names: string[], path?: string) => Symbol[] | string;
 
 
 export class Analyser implements IAnalyser {
     static deepCopy: boolean = false;
-    globalScope: Scope = new Scope([new Symbol("color", {line: 0, column: 0}, {type: BaseType.VECTOR})], "global");
+    globalScope: Scope = new Scope([new Symbol("color", { line: 0, column: 0 }, new _GenericType())], "global");
     currentScope: Scope = this.globalScope;
+    backsteps: string[] = [];
     errors: NDFError[] = [];
+
+    private _globalSymbolCb: Nullable<SymbolCallback>;
+    private _importSymbolCb: Nullable<ImportCallback>;
 
     constructor(private ast: Program, private readonly locale?: Locale, public debug: boolean = false, public raise: boolean = false) {
     }
 
     private get localet(): Nullable<PartialLocalet> {
         return this.locale?.t.bind(this.locale, "analysis");
+    }
+
+    set globalSymbolCallback(cb: SymbolCallback) {
+        this._globalSymbolCb = cb;
+    }
+
+    get globalSymbolCallback(): Nullable<SymbolCallback> {
+        return this._globalSymbolCb;
+    }
+
+    set importSymbolCallback(cb: ImportCallback) {
+        this._importSymbolCb = cb;
+    }
+
+    get importSymbolCallback(): Nullable<ImportCallback> {
+        return this._importSymbolCb;
     }
 
     analyze(): Scope {
@@ -372,6 +619,9 @@ export class Analyser implements IAnalyser {
 
         else if (node instanceof UnnamedObj)
             this.visitUnnamedObj(node);
+
+        else if (node instanceof FileImportComment || node instanceof LibImportComment || node instanceof CommenComment)
+            this.visitComment(node);
 
         else
             this.reportError(new _TypeError(
@@ -441,8 +691,7 @@ export class Analyser implements IAnalyser {
 
         if (symbol)
             this.reportError(new DefineError(
-                this.localet?.("NEA3", node.name.value)
-                || `Duplicate identifier \`${node.name.value}\``,
+                this.localet?.("NEA3", node.name.value) || `Duplicate identifier \`${node.name.value}\``,
                 node.name.pos, endPos(node.name))
             );
 
@@ -451,15 +700,16 @@ export class Analyser implements IAnalyser {
             const templateType = new TemplateType(BaseType.TEMPLATE, node.name.value);
 
             let parentType: Nullable<TemplateType>;
-            const parentSymbol = this.currentScope.resolve(node.extend.value);
+            const parentSymbol = this.findSymbol(this.currentScope, node.extend.value);
 
             if (parentSymbol
                 && parentSymbol.type instanceof TemplateType
                 && parentSymbol.type.type === BaseType.TEMPLATE
-            )   // 继承模板
+            ) {// 继承模板
                 parentType = parentSymbol.type;
+                node.extend.type = parentType;
 
-            else if (!parentSymbol && !node.extend.value.startsWith("T"))
+            } else if (!parentSymbol && !node.extend.value.startsWith("T"))
                 this.reportError(new NameWarning(
                     this.localet?.("NWA4") || "Parent template almost starts with `T`",
                     node.extend.pos, endPos(node.extend))
@@ -509,7 +759,7 @@ export class Analyser implements IAnalyser {
                 node.pos, endPos(node))
             );
 
-        let symbol = this.globalScope.resolve(node.blueprint.value);
+        let symbol = this.findSymbol(this.globalScope, node.blueprint.value);
 
         const objType = new ObjectType(BaseType.OBJECT, node.blueprint.value);
 
@@ -532,12 +782,13 @@ export class Analyser implements IAnalyser {
             return;
         }
 
-
         this.enterScope(prototypeScope, endPos(node.blueprint));
 
         if ((symbol.type instanceof TemplateType && symbol.type.type === BaseType.TEMPLATE)
             || (symbol.type instanceof ObjectType && symbol.type.type === BaseType.OBJECT)) {
             prototypeScope.parent = symbol.type.prototypeScope;  // 继承原型作用域
+
+            node.blueprint.type = symbol.type;
 
             node.args.forEach(arg => this.visitArgument(arg));
 
@@ -553,6 +804,46 @@ export class Analyser implements IAnalyser {
         objType.prototypeScope = prototypeScope;
     }
 
+    @methodDebug(analyserDebug, "visitComment")
+    @traceback()
+    visitComment(node: Comment) {
+        if (node instanceof FileImportComment)
+            this.visitFileImportComment(node);
+
+        else if (node instanceof LibImportComment)
+            this.visitLibImportComment(node);
+    }
+
+    @methodDebug(analyserDebug, "visitFileImportComment")
+    @traceback()
+    visitFileImportComment(node: FileImportComment) {
+        if (!node.items.length)
+            return;
+
+        const symbolsOrMsg = this.importSymbolCallback?.(node.items, node.path);
+
+        if (symbolsOrMsg)
+            if (Array.isArray(symbolsOrMsg))
+                symbolsOrMsg.forEach(symbol => this.globalScope.define(symbol));
+            else
+                this.reportError(new ImportError(symbolsOrMsg, node.pos, endPos(node)));
+    }
+
+    @methodDebug(analyserDebug, "visitFileImportComment")
+    @traceback()
+    visitLibImportComment(node: LibImportComment) {
+        if (!node.items.length)
+            return;
+
+        const symbolsOrMsg = this.importSymbolCallback?.(node.items);
+
+        if (symbolsOrMsg)
+            if (Array.isArray(symbolsOrMsg))
+                symbolsOrMsg.forEach(symbol => this.globalScope.define(symbol));
+            else
+                this.reportError(new ImportError(symbolsOrMsg, node.pos, endPos(node)));
+    }
+
     @methodDebug(analyserDebug, "visitParameterDecl")
     @traceback()
     visitParameterDecl(node: ParameterDecl, tmplType: TemplateType, parentType: Nullable<TemplateType>) {
@@ -565,11 +856,11 @@ export class Analyser implements IAnalyser {
 
         const symbol = new Symbol(node.name.value, node.pos);
 
-        let type = node.annotation
+        let type = Type.toType(node.annotation
             ? this.visitTypeRef(node.annotation)
             : node.default
                 ? this.visitExpression(node.default)
-                : {type: BaseType.ANY};
+                : { type: BaseType.ANY });
 
         if (parentType && parentType.params.has(node.name.value))
             if (!Type.isCompatible(type, parentType.params.get(node.name.value)!)) {
@@ -637,12 +928,11 @@ export class Analyser implements IAnalyser {
             return (this[methodName as keyof Analyser] as (node: GeneralAST) => Type)(node);
         else
             this.reportError(new _TypeError(
-                this.localet?.("NEA11", node.nodeName)
-                || `Unsupported **type reference** type \`${node.nodeName}\``,
+                this.localet?.("NEA11", node.nodeName) || `Unsupported **type reference** type \`${node.nodeName}\``,
                 node.pos, endPos(node)
             ));
 
-        return {type: BaseType.UNKNOW};
+        return new Type(BaseType.UNKNOWN);
     }
 
     @methodDebug(analyserDebug, "visitBuiltinType")
@@ -650,19 +940,19 @@ export class Analyser implements IAnalyser {
     visitBuiltinType(node: BuiltinType): Type {
         switch (node.name) {
             case "int":
-                return {type: BaseType.INT};
+                return new Type(BaseType.INT);
 
             case "float":
-                return {type: BaseType.FLOAT};
+                return new Type(BaseType.FLOAT);
 
             case "bool":
-                return {type: BaseType.BOOLEAN};
+                return new Type(BaseType.BOOLEAN);
 
             case "string":
-                return {type: BaseType.STRING};
+                return new Type(BaseType.STRING);
 
             case "nil":
-                return {type: BaseType.NIL};
+                return new Type(BaseType.NIL);
 
             default:
                 this.reportError(new _TypeError(
@@ -671,7 +961,7 @@ export class Analyser implements IAnalyser {
                     node.pos, endPos(node)
                 ));
 
-                return {type: BaseType.ERROR};
+                return new Type(BaseType.UNKNOWN);
         }
     }
 
@@ -707,31 +997,34 @@ export class Analyser implements IAnalyser {
             return (this[methodName as keyof Analyser] as (node: GeneralAST) => Type)(node);
         } else
             this.reportError(new _TypeError(
-               this.localet?.("NEA14", node.nodeName)
-               || `Undefined **expression** type \`${node.nodeName}\`, which cannot be analyzed`,
+                this.localet?.("NEA14", node.nodeName)
+                || `Undefined **expression** type \`${node.nodeName}\`, which cannot be analyzed`,
                 node.pos, endPos(node)
             ));
 
-        return {type: BaseType.UNKNOW};
+        return new Type(BaseType.UNKNOWN);
     }
 
     @methodDebug(analyserDebug, "visitIdentifier")
     @traceback()
     visitIdentifier(node: Identifier): Type {
-        const symbol = this.currentScope.lookup(node.value);
+        let symbol = this.currentScope.lookup(node.value);
+
+        if (this.globalSymbolCallback && !symbol)
+            symbol = this.globalSymbolCallback(node.value);
 
         if (!symbol) {
             this.reportError(new _TypeError(
-                this.localet?.("NEA15", node.value)
-                || `Unknown **identifier** \`${node.value}\``,
+                this.localet?.("NEA15", node.value) || `Unknown **identifier** \`${node.value}\``,
                 node.pos, endPos(node)
             ));
-            return {type: BaseType.UNKNOW};
+
+            return new Type(BaseType.UNKNOWN);
         }
 
         node.type = symbol.type;
 
-        return symbol.type || {type: BaseType.UNKNOW};  // 防御性处理
+        return symbol.type || new Type(BaseType.UNKNOWN);  // 防御性处理
     }
 
     @methodDebug(analyserDebug, "visitTernaryExpr")
@@ -748,7 +1041,7 @@ export class Analyser implements IAnalyser {
                 node.pos, endPos(node)
             ));
 
-            return {type: BaseType.ERROR};
+            return new Type(BaseType.ERROR);
         }
 
         if (!Type.isCompatible(trueType, falseType)) {
@@ -758,7 +1051,7 @@ export class Analyser implements IAnalyser {
                 node.pos, endPos(node)
             ));
 
-            return {type: BaseType.ERROR};
+            return new Type(BaseType.ERROR);
         }
 
         return trueType;
@@ -787,11 +1080,10 @@ export class Analyser implements IAnalyser {
     visitTemplateParam(node: TemplateParam): Type {
         if (!this.currentScope.parent) {
             this.reportError(new _TypeError(
-                this.localet?.("NEA18")
-                || "**Template parameter** can only be declared in **template declaration**",
+                this.localet?.("NEA18") || "**Template parameter** can only be declared in **template declaration**",
                 node.pos, endPos(node)
             ));
-            return {type: BaseType.ERROR};
+            return new Type(BaseType.ERROR);
         }
 
         const symbol = this.currentScope.lookup(node.name.value, ["template", "prototype"]);
@@ -801,13 +1093,12 @@ export class Analyser implements IAnalyser {
             return symbol.type;
         } else
             this.reportError(new _TypeError(
-                this.localet?.("NEA19", node.name.value)
-                || `Cannot find **template parameter** \`${node.name.value}\``,
+                this.localet?.("NEA19", node.name.value) || `Cannot find **template parameter** \`${node.name.value}\``,
                 node.name.pos, endPos(node)
             ));
 
-        node.name.type = {type: BaseType.UNKNOW};
-        return {type: BaseType.UNKNOW};
+        node.name.type = { type: BaseType.UNKNOWN };
+        return new Type(BaseType.ERROR);
     }
 
     /**
@@ -827,17 +1118,16 @@ export class Analyser implements IAnalyser {
     @methodDebug(analyserDebug, "visitObjectCall")
     @traceback()
     visitObjectCall(node: ObjectCall): ObjectType {
-        const tmplOrProtoSymbol = this.currentScope.lookup(node.blueprint.value);
+        const tmplOrProtoSymbol = this.findSymbol(this.currentScope, node.blueprint.value);
         const orgScope = this.currentScope;
 
-        const objType = new ObjectType(BaseType.OBJECT, node.blueprint.value)
+        const objType = new ObjectType(BaseType.OBJECT, node.blueprint.value);
 
         const prototypeScope = new Scope(orgScope, "prototype");  // 稍后定义父类作用域
 
         if (!tmplOrProtoSymbol) {
             this.reportError(new ReferenceWarning(
-                this.localet?.("NWA6", node.blueprint.value)
-                || `Unknown **blueprint** \`${node.blueprint.value}\``,
+                this.localet?.("NWA6", node.blueprint.value) || `Unknown **blueprint** \`${node.blueprint.value}\``,
                 node.blueprint.pos, endPos(node.blueprint)
             ));
 
@@ -885,22 +1175,22 @@ export class Analyser implements IAnalyser {
 
         if (targetType.type === BaseType.VECTOR) {
             if (indexType.type === BaseType.INT)
-                return {type: targetType.type};
+                return new Type(targetType.type);
 
             else
                 this.reportError(new _TypeError(
-                    this.localet?.("NEA20", typeToStr(targetType), 'int', typeToStr(indexType))
+                    this.localet?.("NEA20", typeToStr(targetType), "int", typeToStr(indexType))
                     || `The type of the index signature of \`${typeToStr(targetType)}\` must be \`int\`, but found \`${typeToStr(indexType)}\``,
                     node.pos, endPos(node)
                 ));
 
         } else if (targetType.type === BaseType.MAP) {
             if (indexType.type === BaseType.STRING)
-                return {type: targetType.type};
+                return new Type(targetType.type);
 
             else
                 this.reportError(new _TypeError(
-                    this.localet?.("NEA20", typeToStr(targetType), 'string', typeToStr(indexType))
+                    this.localet?.("NEA20", typeToStr(targetType), "string", typeToStr(indexType))
                     || `The type of the index signature of \`${typeToStr(targetType)}\` must be \`string\`, but found \`${typeToStr(indexType)}\``,
                     node.pos, endPos(node)
                 ));
@@ -912,7 +1202,7 @@ export class Analyser implements IAnalyser {
                 node.pos, endPos(node)
             ));
 
-        return {type: BaseType.ERROR};
+        return new Type(BaseType.ERROR);
     }
 
     @methodDebug(analyserDebug, "visitMemberAccess")
@@ -930,20 +1220,19 @@ export class Analyser implements IAnalyser {
             else
                 this.reportError(new _TypeError(
                     this.localet?.("NEA22", node.property.value, type.name!)
-                    || `Cannot find **member** \`${node.property.value}\` in type \`${type.name}\``
-                    , node.pos, endPos(node)
+                    || `Cannot find **member** \`${node.property.value}\` in type \`${type.name}\``,
+                    node.pos, endPos(node)
                 ));
 
-            return {type: BaseType.ERROR};
+            return new Type(BaseType.ERROR);
         }
 
         this.reportError(new _TypeError(
-            this.localet?.("NEA23", typeToStr(type))
-            || `Type \`${typeToStr(type)}\` does not support **member access**`,
+            this.localet?.("NEA23", typeToStr(type)) || `Type \`${typeToStr(type)}\` does not support **member access**`,
             node.target.pos, endPos(node.property)
         ));
 
-        return {type: BaseType.ERROR};
+        return new Type(BaseType.ERROR);
     }
 
     @methodDebug(analyserDebug, "visitParenthesisExpr")
@@ -955,21 +1244,77 @@ export class Analyser implements IAnalyser {
     @methodDebug(analyserDebug, "visitReference")
     @traceback()
     visitReference(node: Reference): Type {
-        // TODO: 尝试从当前作用域或所有文件中查找引用的类型
-        return {type: BaseType.UNKNOW};
+        const paths = node.path.split("/").slice(1);
+
+        let idx = 0;
+        let symbol: Nullable<Symbol>;
+        let pos: IPos = { line: node.pos.line, column: node.pos.column + 2 };
+
+        while (idx < paths.length) {
+            const name = paths[idx];
+
+            symbol = idx === 0
+                ? this.currentScope.lookup(name, ["template", "prototype"]) || this.globalSymbolCallback?.(name)
+                : (symbol!.type as TemplateType | ObjectType).prototypeScope!.lookup(name, ["template", "prototype"]);
+
+            if (symbol) {
+                // 最后一项可以是模板或原型,但非尾部的项必须是原型
+                if (
+                    !(symbol.type instanceof TemplateType || symbol.type instanceof ObjectType)
+                    && idx !== paths.length - 1
+                ) {
+                    this.reportError(new _TypeError(
+                        this.localet?.("NEA34", name) || `Type '${name}' does not support \`property access\``,
+                        pos, { line: pos.line, column: pos.column + name.length }
+                    ));
+
+                    return new Type(BaseType.ERROR);
+                }
+            }
+
+            if (!symbol) {
+                if (idx === 0) {
+                    this.reportError(new DefineError(
+                        this.localet?.("NEA15", name) || `Unknown **identifier** \`${name}\``,
+                        pos, { line: pos.line, column: pos.column + name.length })
+                    );
+
+                    return new Type(BaseType.UNKNOWN);
+                } else {
+                    this.reportError(new ReferenceWarning(
+                        this.localet?.("NEA35", name, typeToStr(symbol!.type))
+                        || `Property '${typeToStr(symbol!.type)}' does not exist on type '${name}'`,
+                        pos, { line: pos.line, column: pos.column + name.length }
+                    ));
+
+                    return new Type(BaseType.ERROR);
+                }
+            }
+
+            pos = { line: pos.line, column: pos.column + name.length + 1 };
+            idx++;
+        }
+
+        node.type = symbol!.type;
+
+        return symbol!.type;
     }
 
     @methodDebug(analyserDebug, "visitGuidCall")
     @traceback()
     visitGuidCall(node: GuidCall): Type {
-        return {type: BaseType.GUID, name: node.uuid};
+        return new Type(BaseType.GUID, node.uuid);
     }
 
     @methodDebug(analyserDebug, "visitMapDef")
     @traceback()
     visitMapDef(node: MapDef): Type {
-        const type = new _GenericType(BaseType.MAP, "map");
-        type.params = this.unrepeatedType(node.pairs.map(pair => this.visitPair(pair)));
+        const type = new MapType(BaseType.MAP, "map");
+
+        const types = node.pairs.map(pair => this.visitPair(pair));
+
+        type.keyType = this.unrepeatedType(types.map(pair => pair.keyType!));
+        type.valueType = this.unrepeatedType(types.map(pair => pair.valueType!));
 
         node.type = type;
 
@@ -978,9 +1323,10 @@ export class Analyser implements IAnalyser {
 
     @methodDebug(analyserDebug, "visitPair")
     @traceback()
-    visitPair(node: Pair): Type {
-        const type = new _GenericType(BaseType.PAIR, "pair");
-        type.params = [this.visitExpression(node.key), this.visitExpression(node.value)];
+    visitPair(node: Pair): PairType {
+        const type = new PairType(BaseType.PAIR, "pair");
+        type.keyType = this.visitExpression(node.key);
+        type.valueType = this.visitExpression(node.value);
 
         node.type = type;
 
@@ -990,22 +1336,22 @@ export class Analyser implements IAnalyser {
     @methodDebug(analyserDebug, "visitVectorDef")
     @traceback()
     visitVectorDef(node: VectorDef): Type {
-        const type = new _GenericType(BaseType.VECTOR, "vector");
+        const type = new VectorType(BaseType.VECTOR, "vector");
 
         const orgParams = node.elements.map(elem => this.visitExpression(elem));
 
-        type.params = this.unrepeatedType(orgParams);
+        type.elementType = this.unrepeatedType(orgParams);
 
         node.type = type;
 
         return type;
     }
 
-    @methodDebug(analyserDebug, "visitTypeInitializer")
+    @methodDebug(analyserDebug, "visitTypeConstructor")
     @traceback()
-    visitTypeInitializer(node: TypeInitializer): Type {
-        // TODO: 实现类型/泛型验证
-        return {type: BaseType.ANY};
+    visitTypeConstructor(node: TypeConstructor): Type {
+        // TODO: 类型构造器的类型检查
+        return new Type(BaseType.ANY);
     }
 
     @methodDebug(analyserDebug, "visitPropertyAssignExpr")
@@ -1030,7 +1376,7 @@ export class Analyser implements IAnalyser {
             return valueType;
         }
 
-        return {type: BaseType.UNKNOW};
+        return new Type(BaseType.UNKNOWN);
     }
 
     @methodDebug(analyserDebug, "visitArgument")
@@ -1053,12 +1399,12 @@ export class Analyser implements IAnalyser {
 
         if (!parentSymbol) {
 
-            if (!noParent)
-                this.reportError(new NameWarning(
-                    this.localet?.("NEA25", node.name.value)
-                    || `Cannot resolve **member** \`${node.name.value}\` because cannot find **blueprint**`,
-                    node.name.pos, endPos(node.name)
-                ));
+//            if (!noParent)
+//                this.reportError(new NameWarning(
+//                    this.localet?.("NEA25", node.name.value)
+//                    || `Cannot resolve **member** \`${node.name.value}\` because cannot find **blueprint**`,
+//                    node.name.pos, endPos(node.name)
+//                ));
 
             symbol.type = type;
             node.name.type = type;
@@ -1098,37 +1444,37 @@ export class Analyser implements IAnalyser {
                 node.pos, endPos(node)
             ));
 
-        return {type: BaseType.UNKNOW};
+        return new Type(BaseType.UNKNOWN);
     }
 
     @methodDebug(analyserDebug, "visitInteger")
     @traceback()
     visitInteger(node: Integer): Type {
-        return {type: BaseType.INT};
+        return new Type(BaseType.INT);
     }
 
     @methodDebug(analyserDebug, "visitFloat")
     @traceback()
     visitFloat(node: Float): Type {
-        return {type: BaseType.FLOAT};
+        return new Type(BaseType.FLOAT);
     }
 
     @methodDebug(analyserDebug, "visitBoolean")
     @traceback()
     visitBool(node: Bool): Type {
-        return {type: BaseType.BOOLEAN};
+        return new Type(BaseType.BOOLEAN);
     }
 
     @methodDebug(analyserDebug, "visitString")
     @traceback()
     visitString(node: Str): Type {
-        return {type: BaseType.STRING};
+        return new Type(BaseType.STRING);
     }
 
     @methodDebug(analyserDebug, "visitNil")
     @traceback()
     visitNil(node: Nil): Type {
-        return {type: BaseType.NIL};
+        return new Type(BaseType.NIL);
     }
 
     @methodDebug(analyserDebug, "visitErrorExpr")
@@ -1139,12 +1485,12 @@ export class Analyser implements IAnalyser {
             node.pos, endPos(node)
         ));
 
-        return {type: BaseType.ERROR};
+        return new Type(BaseType.ERROR);
     }
 
     private unaryExprResultWithCheck(node: UnaryExpr, operandType: Type): Type {
         switch (node.operator) {
-            case '-':
+            case "-":
                 if (Type.isNumeric(operandType))
                     return operandType;
 
@@ -1157,7 +1503,7 @@ export class Analyser implements IAnalyser {
 
                 break;
 
-            case '!':
+            case "!":
                 if (operandType.type === BaseType.BOOLEAN)
                     return operandType;
 
@@ -1179,39 +1525,41 @@ export class Analyser implements IAnalyser {
                 ));
         }
 
-        return {type: BaseType.ERROR};
+        return new Type(BaseType.ERROR);
     }
 
     private binaryExprResultWithCheck(node: BinaryExpr, leftType: Type, rightType: Type): Type {
         if (leftType.type === BaseType.ANY && rightType.type === BaseType.ANY)
-            return {type: BaseType.ANY};
+            return new Type(BaseType.ANY);
 
-        else if (leftType.type === BaseType.UNKNOW && rightType.type === BaseType.UNKNOW)
-            return {type: BaseType.UNKNOW};
+        else if (leftType.type === BaseType.UNKNOWN && rightType.type === BaseType.UNKNOWN)
+            return new Type(BaseType.UNKNOWN);
 
         else if (leftType.type === BaseType.ANY || rightType.type === BaseType.ANY)
-            return {type: BaseType.ANY};
+            return new Type(BaseType.ANY);
 
-        else if (leftType.type === BaseType.UNKNOW || rightType.type === BaseType.UNKNOW)
-            return {type: BaseType.UNKNOW};
+        else if (leftType.type === BaseType.UNKNOWN || rightType.type === BaseType.UNKNOWN)
+            return new Type(BaseType.UNKNOWN);
 
         else if ([leftType.type, rightType.type].some(t => t === BaseType.UNNEEDED || t === BaseType.TEMPLATE)) {
             this.reportError(new _TypeError(
                 this.localet?.("NEA30") || "There is an ineligible type", node.pos, endPos(node)));
 
-            return {type: BaseType.ERROR};
+            return new Type(BaseType.ERROR);
         }
 
         switch (node.operator) {
-            case '+':
+            case "+":
                 if (Type.isNumeric(leftType) && Type.isNumeric(rightType))
-                    return {type: leftType.type === BaseType.INT && rightType.type === BaseType.INT ? BaseType.INT : BaseType.FLOAT};
+                    return new Type(leftType.type === BaseType.INT && rightType.type === BaseType.INT ? BaseType.INT : BaseType.FLOAT);
                 if (leftType.type === rightType.type) {
                     if (leftType.type === BaseType.GENERIC && Type.isSomeGenericType(leftType, rightType))
                         return leftType;
-                    else if (leftType.type === BaseType.STRING) return {type: BaseType.STRING};
-                    else if (leftType.type === BaseType.VECTOR) return {type: BaseType.VECTOR};
-                    else if (leftType.type === BaseType.MAP) return {type: BaseType.MAP};
+                    else if (leftType.type === BaseType.STRING) return new Type(BaseType.STRING);
+                    else if (leftType.type === BaseType.VECTOR && Type.isSomeGenericType(leftType, rightType))
+                        return leftType;
+                    else if (leftType.type === BaseType.MAP && Type.isSomeGenericType(leftType, rightType))
+                        return leftType;
                 }
                 this.reportError(new _TypeError(
                     this.localet?.("NEA31", node.operator, typeToStr(leftType), typeToStr(rightType))
@@ -1219,11 +1567,11 @@ export class Analyser implements IAnalyser {
                     node.pos, endPos(node)
                 ));
                 break;
-            case '-':
-            case '*':
-            case 'div': {
+            case "-":
+            case "*":
+            case "div": {
                 if (Type.isNumeric(leftType) && Type.isNumeric(rightType))
-                    return {type: leftType.type === BaseType.INT && rightType.type === BaseType.INT ? BaseType.INT : BaseType.FLOAT};
+                    return new Type(leftType.type === BaseType.INT && rightType.type === BaseType.INT ? BaseType.INT : BaseType.FLOAT);
 
                 this.reportError(new _TypeError(
                     this.localet?.("NEA31", node.operator, typeToStr(leftType), typeToStr(rightType))
@@ -1233,14 +1581,14 @@ export class Analyser implements IAnalyser {
 
                 break;
             }
-            case '%':
+            case "%":
                 if (Type.isNumeric(rightType) && Type.isNumeric(rightType))
                     if (leftType.type === BaseType.INT && rightType.type === BaseType.INT)
-                        return {type: BaseType.INT};
+                        return new Type(BaseType.INT);
 
                     else {
                         this.reportError(new _TypeError(
-                            this.localet?.("NEA32", 'float') || `Type \`float\` does not support **modulus operator**`,
+                            this.localet?.("NEA32", "float") || `Type \`float\` does not support **modulus operator**`,
                             node.pos, endPos(node)
                         ));
                         break;
@@ -1253,14 +1601,14 @@ export class Analyser implements IAnalyser {
                 ));
 
                 break;
-            case '>':
-            case '<':
-            case '>=':
-            case '<=':
-            case '&':
-            case '|':
+            case ">":
+            case "<":
+            case ">=":
+            case "<=":
+            case "&":
+            case "|":
                 if (Type.isNumeric(leftType) && Type.isNumeric(rightType))
-                    return {type: BaseType.INT};
+                    return new Type(BaseType.INT);
 
                 this.reportError(new _TypeError(
                     this.localet?.("NEA31", node.operator, typeToStr(leftType), typeToStr(rightType))
@@ -1270,13 +1618,13 @@ export class Analyser implements IAnalyser {
 
                 break;
 
-            case '==':
-            case '!=':
+            case "==":
+            case "!=":
                 if (leftType.type === rightType.type)
                     if (Type.isSomeObj(leftType, rightType) || Type.isSomeGenericType(leftType, rightType))
-                        return {type: BaseType.BOOLEAN};
+                        return new Type(BaseType.BOOLEAN);
 
-                return {type: BaseType.BOOLEAN};
+                return new Type(BaseType.BOOLEAN);
 
             default:
 
@@ -1288,7 +1636,7 @@ export class Analyser implements IAnalyser {
                 break;
         }
 
-        return {type: BaseType.ERROR};
+        return new Type(BaseType.ERROR);
     }
 
     // 注意方向,覆盖时是后来的赋给原先的
@@ -1309,18 +1657,18 @@ export class Analyser implements IAnalyser {
             if (Type.isNumeric(targetType) && Type.isNumeric(valueType))
                 return targetType;
             else if (targetType.type === BaseType.ANY || valueType.type === BaseType.ANY)
-                if (targetType.type === BaseType.UNKNOW || valueType.type === BaseType.UNKNOW)  // 一个是未知类型，另一个是任意类型 => 任意类型
-                    return {type: BaseType.ANY};
+                if (targetType.type === BaseType.UNKNOWN || valueType.type === BaseType.UNKNOWN)  // 一个是未知类型，另一个是任意类型 => 任意类型
+                    return new Type(BaseType.ANY);
                 else  // 一个是任意类型,另一个不明确 => 如果左边是任意类型或者未知类型，则返回右边类型，否则返回左边类型
                     return targetType.type === BaseType.ANY ? valueType : targetType;
-            else if (targetType.type === BaseType.UNKNOW || valueType.type === BaseType.UNKNOW)
-                return targetType.type === BaseType.UNKNOW ? valueType : targetType;
+            else if (targetType.type === BaseType.UNKNOWN || valueType.type === BaseType.UNKNOWN)
+                return targetType.type === BaseType.UNKNOWN ? valueType : targetType;
             else if (targetType.type === BaseType.OBJECT && valueType.type === BaseType.NIL)
                 return targetType;
         }
 
         this.reportError(new _TypeError(`类型不匹配: ${targetType.name} = ${valueType.name}`, node.pos, endPos(node)));
-        return {type: BaseType.ERROR};
+        return new Type(BaseType.ERROR);
     }
 
     private unrepeatedType(types: Type[]): Type[] {
@@ -1330,7 +1678,7 @@ export class Analyser implements IAnalyser {
             if (type instanceof ObjectType)
                 return `${type.type}_${type.name}`;
             else if (type instanceof _GenericType)
-                return `${type.type}_${type.name}_${type.params.map(p => genCompositeKey(p)).join('_')}`;
+                return `${type.type}_${type.name}_${type.params.map(p => genCompositeKey(p)).join("_")}`;
             else
                 return String(type.type);
         }
@@ -1345,6 +1693,18 @@ export class Analyser implements IAnalyser {
         });
 
         return types;
+    }
+
+    private findSymbol(scope: Scope, name: string) {
+        if (this.backsteps.includes(name))
+            return undefined;
+
+        const symbol = scope.resolve(name) || this.globalSymbolCallback?.(name);
+
+        if (!symbol)
+            this.backsteps.push(name);
+
+        return symbol;
     }
 
     enterScope(start?: IPos): void;

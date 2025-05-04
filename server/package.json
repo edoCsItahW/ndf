@@ -8,10 +8,16 @@
 	"engines": {
 		"node": "*"
 	},
-
 	"dependencies": {
+		"async-mutex": "^0.5.0",
+		"fast-glob": "^3.3.3",
+		"murmurhash-js": "^1.0.0",
+		"serialize-javascript": "^6.0.2",
 		"vscode-languageserver": "^9.0.1",
 		"vscode-languageserver-textdocument": "^1.0.11"
 	},
-	"scripts": {}
+	"scripts": {},
+	"devDependencies": {
+		"@types/serialize-javascript": "^5.0.4"
+	}
 }

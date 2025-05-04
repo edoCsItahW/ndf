@@ -51,7 +51,7 @@ export enum BaseType {
     GENERIC,
     GUID,
     UNNEEDED,
-    UNKNOW,
+    UNKNOWN,
     ANY,
     ERROR
 }

@@ -17,6 +17,20 @@
  * @copyright CC BY-NC-SA 2025. All rights reserved.
  * */
 
+import { Lexer } from "./lexer";
+import { Token } from "./token";
+import { NDFError } from "../expection";
+import { Processor } from "./processor";
+
 export * from './token';
 export * from './lexer';
 export * from './processor';
+
+
+export function tokenize(src: string): { tokens: Token[], errors: NDFError[] } {
+    const lexer = new Lexer(src);
+    const tokens = new Processor(lexer.tokenize()).process();
+    return { tokens, errors: lexer.errors };
+}
+
+

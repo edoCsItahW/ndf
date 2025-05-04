@@ -1,0 +1,10 @@
+{
+	"fileExtensions": {
+		".ndf": {
+			"iconPath": "./fileIcon.svg"
+		}
+	},
+	"languageIds": {
+		"ndf": "./fileIcon.svg"
+	}
+}
