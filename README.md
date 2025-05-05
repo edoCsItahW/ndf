@@ -183,8 +183,7 @@ Location: `File > Preferences > Settings > Extensions > NDF`
 
   > [!NOTE]
   > 1. The build task (currently) is cumulative; deleting it will reset the progress.
-  > 2. If global symbol search functionality is needed, do not delete the `.ndf-cache` folder, as it will occupy
-       significant disk space.
+  > 2. If global symbol search functionality is needed, do not delete the `.ndf-cache` folder, as it will occupy significant disk space.
   > 3. During the build process, files in the `.ndf-cache` folder are frequently created and deleted, which is normal
        behavior.
 
