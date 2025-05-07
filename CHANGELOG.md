@@ -5,6 +5,24 @@ VS Code plugin `NDF` change log
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.2.4 - 2025-05-06
+
+### Fixed
+
+1. Fixed synchronization issues during parallel builds
+2. Added missing public keyword related syntax.
+
+### Changed
+
+1. Optimized the speed and performance of global symbol construction, achieving nearly 100% symbol construction in one go
+2. Improved the speed of global symbol lookup during file parsing, reducing it from minutes to seconds
+
+
+## 2.2.3 - 2025-05-05
+
+### Fixed
+
+1. Fix the issue where global build does not start when the number of processes, threads, and coroutines is 0
 
 
 ## 2.2.2 - 2025-05-04

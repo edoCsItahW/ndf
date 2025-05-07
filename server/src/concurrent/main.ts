@@ -10,8 +10,8 @@
  * @author edocsitahw
  * @version 1.1
  * @date 2025/04/30 11:20
- * @desc
- * @copyrigh-t CC BY-NC-SA 2025. All rights reserved.
+ * @desc 并行框架
+ * @copyright CC BY-NC-SA 2025. All rights reserved.
  * */
 import { fork, ChildProcess } from "child_process";
 import {
@@ -23,11 +23,11 @@ import {
     ThreadRespResult
 } from "../types";
 import { join } from "node:path";
-import { deserialize as utilDeserialize, serialize as utilSerialize, serializeSafe, deserializeSafe } from "../utils";
+import { deserialize as utilDeserialize, serialize as utilSerialize, serializeSafe, deserializeSafe, Queue } from "../utils";
 import { parentPort, Worker, workerData } from "node:worker_threads";
 import { cpus } from "os";
 import { regexStack } from "../debug";
-import { Mutex } from "async-mutex";
+
 
 
 export function serialize<T extends DataProtocol>(msg: T): string {
@@ -36,48 +36,6 @@ export function serialize<T extends DataProtocol>(msg: T): string {
 
 export function deserialize<T extends DataProtocol>(msg: string): T {
     return utilDeserialize(msg) as T;
-}
-
-
-class Queue<T> {
-    private items: T[] = [];
-    private mutex = new Mutex();
-
-    empty(): boolean {
-        return this.items.length === 0;
-    }
-
-    putNoWait(item: T) {
-        this.items.push(item);
-    }
-
-    async put(item: T) {
-        const release = await this.mutex.acquire();
-
-        try {
-            this.items.push(item);
-        } finally {
-            release();
-        }
-    }
-
-    getNoWait(): Nullable<T> {
-        return this.items.shift();
-    }
-
-    async get(): Promise<Nullable<T>> {
-        const release = await this.mutex.acquire();
-
-        try {
-            return this.items.shift();
-        } finally {
-            release();
-        }
-    }
-
-    size(): number {
-        return this.items.length;
-    }
 }
 
 
@@ -122,7 +80,7 @@ export class Master<T> {
                 switch (data.type) {
                     // 子进程请求分发任务
                     case "task":
-                        if (this.endFlag && this.queue.empty())
+                        if (this.endFlag && await this.queue.empty())
                             this._shutdown();
 
                         else {
@@ -224,16 +182,20 @@ export class ProcessWorker {
                 // 父进程发回任务
                 case "task":
                     for (const task of this.cfg.threadDisruptor ? this.cfg.threadDisruptor(data.data.task) : [data.data.task]) {
-                        if (this.cfg.debug)
-                            console.log(`[pid: ${this.pid} -> tid: ${data.data.tid}] task: ${task}`);
+                        if (task) {
+                            if (this.cfg.debug)
+                                console.log(`[pid: ${this.pid} -> tid: ${data.data.tid}] task: ${task}`);
 
-                        this.threads[data.data.tid].postMessage(serialize<ThreadRequTask>({ type: "task", data: task }));
+                            this.threads[data.data.tid].postMessage(serialize<ThreadRequTask>({ type: "task", data: task }));
+
+                        }
                     }
 
                     break;
 
                 case "end":
                     this.threads.forEach((thread, tid) => {
+
                         if (this.cfg.debug)
                             console.log(`[pid: ${this.pid} -> tid: ${tid}] end`);
 
@@ -309,6 +271,8 @@ export class ThreadWorker {
     private queue = new Queue();
     private freeCount = 0;
     private endFlag = false;
+    private taskCount = new SharedArrayBuffer(16);
+    private taskCountView = new Int32Array(this.taskCount);
     private readonly cfg: ConcurrentConfig;
     private readonly tid: number;
     private readonly pid: number;
@@ -324,6 +288,14 @@ export class ThreadWorker {
         this.setup();
     }
 
+    get endAble(): boolean {
+        this.queue.empty().then(flag => {
+            return flag && this.freeCount === this.cfg.asyncNum && this.taskCountView[0] <= 0;
+        });
+
+        return true;
+    }
+
     private setup() {
         if (this.cfg.debug)
             console.log(`[tid: ${this.tid} -> pid: ${this.pid}] task: ${this.tid}`);
@@ -337,8 +309,14 @@ export class ThreadWorker {
             switch (data.type) {
                 // 父进程发回任务
                 case "task":
-                    for (const task of this.cfg.asyncDisruptor ? this.cfg.asyncDisruptor(data.data) : [data.data])
-                        this.queue.putNoWait(task);
+                    for (const task of this.cfg.asyncDisruptor ? this.cfg.asyncDisruptor(data.data) : [data.data]) {
+                        if (task) {
+                            Atomics.add(this.taskCountView, 0, 1);
+
+                            await this.queue.put(task);
+
+                        }
+                    }
 
                     this.process(data.data);
 
@@ -347,7 +325,7 @@ export class ThreadWorker {
                 case "end":
                     this.endFlag = true;
 
-                    const flag = this.queue.empty() && this.freeCount === this.cfg.asyncNum ? "yes" : "no";
+                    const flag = this.endAble ? "yes" : "no";
 
                     if (this.cfg.debug)
                         console.log(`[tid: ${this.tid} -> pid: ${this.pid}] end: ${flag}`);
@@ -358,7 +336,7 @@ export class ThreadWorker {
     }
 
     private async next() {
-        if (this.endFlag && this.freeCount === this.cfg.asyncNum && this.queue.empty()) {
+        if (this.endFlag && this.endAble) {
             if (this.cfg.debug)
                 console.log(`[tid: ${this.tid} -> pid: ${this.pid}] end: yes`);
 
@@ -367,13 +345,19 @@ export class ThreadWorker {
             return;
         }
 
-        if (this.cfg.debug)
-            console.log(`[tid: ${this.tid} -> pid: ${this.pid}] task: ${this.tid}`);
+        if (!await this.queue.empty() && this.freeCount > 0) {
+            const task = await this.queue.get();
 
-        parentPort?.postMessage(serialize<ThreadRequTask>({ type: "task", data: this.tid }));
+            if (task)
+                this.process(task);
+        }
 
-        if (!this.queue.empty() && this.freeCount > 0)
-            this.process(await this.queue.get());
+        else {
+            if (this.cfg.debug)
+                console.log(`[tid: ${this.tid} -> pid: ${this.pid}] task: ${this.tid}`);
+
+            parentPort?.postMessage(serialize<ThreadRequTask>({ type: "task", data: this.tid }));
+        }
     }
 
     private response(result: any) {
@@ -414,6 +398,7 @@ export class ThreadWorker {
 
         } finally {
             this.freeCount++;
+            Atomics.sub(this.taskCountView, 0, 1);
             this.next();
         }
     }

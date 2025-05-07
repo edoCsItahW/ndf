@@ -26,7 +26,7 @@
 			"patterns": [
 				{
 					"name": "keyword.control.ndf",
-					"match": "\\b(private|export|template|is|unnamed|div|MAP|GUID|true|false|nil)\\b"
+					"match": "\\b(private|public|export|template|is|unnamed|div|MAP|GUID|true|false|nil)\\b"
 				}
 			]
 		},

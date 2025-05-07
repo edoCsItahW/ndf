@@ -4,9 +4,9 @@ Program: Statement* EOF;
 
 Statement: Assignment | TemplateDef | UnnameObj | Comment;
 
-Assignment: ('private' | 'export')? Identifier 'is' Expression;
+Assignment: ('private' | 'export' | 'public')? Identifier 'is' Expression;
 
-TemplateDef: ('private')? 'template' Identifier (Newline | Comment)* ParameterBlock (Newline | Comment)* 'is' Identifier (Newline | Comment)* MemberBlock;
+TemplateDef: ('private')? 'template' Identifier (Newline | Comment)* ParameterBlock (Newline | Comment)* 'is' Newline* Identifier (Newline | Comment)* MemberBlock;
 
 UnnameObj: 'unnamed' Identifier (Newline | Comment)* ArgumentBlock;
 
@@ -110,7 +110,7 @@ Empty: ;
 
 ArgumentBlock: '(' (Newline | Comment)* Argument* (Newline | Comment)* ')';
 
-Argument: ('exprot')? Identifier (Annotation | ('=' | 'is') Expression);
+Argument: ('exprot' | 'public')? Identifier (Annotation | ('=' | 'is') Expression);
 
 HexDigit: [0-9a-fA-F];
 Letter: [a-zA-Z];

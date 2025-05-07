@@ -18,12 +18,19 @@ import {
     Connection,
     DidChangeConfigurationNotification,
     DidChangeConfigurationParams,
-    DocumentDiagnosticParams, DocumentDiagnosticReport, Hover,
+    DocumentDiagnosticParams,
+    DocumentDiagnosticReport,
+    Hover,
     InitializedParams,
     InitializeError,
     InitializeParams,
     InitializeResult,
-    ProposedFeatures, TextDocumentChangeEvent, TextDocumentPositionParams, WorkspaceFolder
+    ProposedFeatures,
+    SemanticTokensParams,
+    SemanticTokensPartialResult,
+    TextDocumentChangeEvent,
+    TextDocumentPositionParams,
+    WorkspaceFolder
 } from "vscode-languageserver";
 import {
     createConnection,
@@ -34,16 +41,21 @@ import {
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve, relative, dirname } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { cpus } from "node:os";
 import { createHash } from "node:crypto";
 import { Analyser, analyze, InternalNode, LeafNode, Parser, Program, Scope, Symbol, Visitor } from "./parser";
-import { IGlobalCache, Language, Level, Nullable } from "./types";
+import { Language, Level, LowercaseAlphabet, Nullable, SymbolInfo } from "./types";
 import { Hover as HoverHelper, LOCALE } from "./IDEHelper";
-import { GlobalBuilder } from "./IDEHelper/globalBuild";
+import { GlobalBuilder } from "./IDEHelper/globalBuilder";
 import { NDFError, NDFWarning } from "./expection";
 import { Lexer, Processor, Token } from "./lexer";
 import { methodDebug } from "./debug";
+import { RadixTree } from "./utils";
+import { readdirSync } from "fs";
+
+
+//import { ProgressLocation, window } from "vscode";
 
 
 /**
@@ -81,7 +93,7 @@ class Server {
 
     private extName: string = "ndf";
     private prjRoot: string = "";
-    private cacheFile: Nullable<string>;
+    private cacheDir: string = "";
     debug: boolean = false;
 
     /**
@@ -100,10 +112,11 @@ class Server {
         this.globalCaches = {
             symbols: {
                 searched: new Map(),
-                global: {}
+                global: new Map()
             },
             uri: "",
             backSteps: [],
+            progress: new Map(),
             flag: {
                 searched: false,
                 workspaceCfg: false
@@ -114,7 +127,7 @@ class Server {
     /**
      * @method run
      * @summary 运行服务器。
-     * @desc 该方法用于运行服务器。
+     * @desc 调度方法,用于启动服务器。
      * @remarks
      * 服务器启动时函数调用顺序:
      * 1. initialize()
@@ -141,6 +154,7 @@ class Server {
         // this.connection.onCompletionResolve(this.completionResolve.bind(this))  // 代码完成解析
         // this.connection.onDocumentFormatting(this.formatting.bind(this))  // 格式化
         // this.connection.onSignatureHelp(this.signatureHelp.bind(this))  // 签名帮助
+        this.connection.languages.semanticTokens.on(this.semanticTokens.bind(this));  // 语义令牌
 
         // 事件监听
         // this.connection.onDidChangeWatchedFiles(this.watchedFilesChanged.bind(this))  // 文件监视器变更
@@ -200,7 +214,29 @@ class Server {
                 signatureHelpProvider: undefined,
 
                 // 语义令牌: 暂不支持
-                semanticTokensProvider: undefined,
+                semanticTokensProvider: {
+                    legend: {
+                        tokenTypes: [
+                            "template",
+                            "variable",
+                            "uuid",
+                            "templateParam",
+                            "member",
+                            "generic",
+                            "memberAccess",
+                            "string",
+                            "number"
+                        ],
+                        tokenModifiers: [
+                            "export",
+                            "private"
+                        ]
+                    },
+                    full: {
+                        delta: false,  // 增量更新
+                    },
+                    range: false  // 范围更新
+                },
 
                 // 文本文档同步: 暂不支持
                 textDocumentSync: undefined
@@ -393,6 +429,14 @@ class Server {
         };
     }
 
+    @methodDebug(serverDebug)
+    private semanticTokens(params: SemanticTokensParams): SemanticTokensPartialResult {
+        console.log(params.textDocument, params.partialResultToken, params.workDoneToken);
+        return {
+            data: [1]
+        };
+    }
+
     /**
      * @method parse
      * @summary 解析文档。
@@ -459,27 +503,36 @@ class Server {
         if (this.globalCaches.symbols.searched.has(name))  // 已在搜索缓存中
             return this.globalCaches.symbols.searched.get(name)!;
 
-        if (this.cacheFile && existsSync(this.cacheFile))  // 存在缓存文件,则尝试读取缓存
-            this.globalCaches.symbols.global = JSON.parse(readFileSync(this.cacheFile, "utf-8"));
+        const prefix = name[0].toLowerCase() as LowercaseAlphabet;
 
-        if (this.globalCaches.symbols.global)  // 全局缓存存在
-            for (const [file, value] of Object.entries(this.globalCaches.symbols.global))
-                if (value.symbols.hasOwnProperty(name)) {
-                    const symbol = Symbol.fromJSON(value.symbols[name]);
+        if (this.cacheDir && existsSync(this.cacheDir)) {  // 存在缓存文件,则尝试读取缓存
+            const cacheFile = join(this.cacheDir, `${prefix}.json`);
 
-                    this.globalCaches.symbols.searched.set(name, symbol);
+            if (!this.globalCaches.symbols.global.has(prefix) && existsSync(cacheFile))
+                this.globalCaches.symbols.global.set(prefix, RadixTree.deserialize(readFileSync(join(this.cacheDir, `${prefix}.json`), "utf-8")));
 
-                    // 记录需要导入的符号
-                    if (
-                        this.documentsCaches[this.globalCaches.uri].needImports.has(file)
-                        && !this.documentsCaches[this.globalCaches.uri].needImports.get(file)!.includes(name)
-                    )
-                        this.documentsCaches[this.globalCaches.uri].needImports.get(file)!.push(name);
-                    else
-                        this.documentsCaches[this.globalCaches.uri].needImports.set(file, [name]);
+        }
 
-                    return symbol;
-                }
+        if (this.globalCaches.symbols.global.has(prefix)) {  // 全局缓存存在
+            const result = this.globalCaches.symbols.global.get(prefix)!.search(name);
+
+            if (result) {
+                const symbol = Symbol.fromJSON(result.info);
+
+                this.globalCaches.symbols.searched.set(name, symbol);
+
+                // 记录需要导入的符号
+                if (
+                    this.documentsCaches[this.globalCaches.uri].needImports.has(result.file)
+                    && !this.documentsCaches[this.globalCaches.uri].needImports.get(result.file)!.includes(name)
+                )
+                    this.documentsCaches[this.globalCaches.uri].needImports.get(result.file)!.push(name);
+                else
+                    this.documentsCaches[this.globalCaches.uri].needImports.set(result.file, [name]);
+
+                return symbol;
+            }
+        }
 
         this.globalCaches.backSteps.push(name);  // 加入逆推表
     }
@@ -495,7 +548,13 @@ class Server {
     @methodDebug(serverDebug)
     private spawnImport(path: string, needImports: Map<string, string[]>) {
         const codes: string[] = [];
-        needImports.forEach((names, file) => codes.push(`/// from '\\${relative(this.prjRoot, file)}' import ${names.join(", ")}\n`));
+        needImports.forEach((names, file) => {
+            // 如果符号就是当前文件中的,则不导入
+            if (file === path)
+                return;
+
+            codes.push(`/// from '\\${relative(this.prjRoot, file)}' import ${names.join(", ")}\n`);
+        });
 
         if (codes.length) {
             const code = codes.join("");
@@ -538,6 +597,20 @@ class Server {
             else
                 absPath = path;
 
+            // 如果路径和当前文档路径一致,则需要删除(遗留问题)
+            if (absPath === uriToPath(this.globalCaches.uri)) {
+                const oldContent = readFileSync(uriToPath(this.globalCaches.uri), "utf-8");
+
+                // 删除整行
+                const pattern = new RegExp(`^\\s*///\\s*from\\s*['"]\\${relative(this.prjRoot, absPath)}['"]\\s*import\\s*(\\w+(?:,\\s*\\w+)*)\\s*$`, "m");
+
+                const newContent = oldContent.replace(pattern, "");
+
+                writeFileSync(uriToPath(this.globalCaches.uri), newContent);
+
+                return [];
+            }
+
             if (existsSync(absPath)) {
                 const code = readFileSync(absPath, "utf-8");
 
@@ -555,7 +628,7 @@ class Server {
 
             return LOCALE.t("server", "NSI2", path);
         } else {  // 标准库导入
-            const lib = readFileSync(join(dirname(__dirname), 'lib.d.ndf'), "utf8");
+            const lib = readFileSync(join(dirname(__dirname), "lib.d.ndf"), "utf8");
 
             const { scope } = analyze(lib);
 
@@ -579,29 +652,81 @@ class Server {
     private async buildGlobalSymbols() {
         const folders = await this.connection.workspace.getWorkspaceFolders();
 
-        folders?.forEach(folder => {
-            if (WorkspaceFolder.is(folder)) {
-                const folderPath = uriToPath(folder.uri);
+        return this.withServerProgress(LOCALE.t("server", "NSI3", false), async ({update, id}) => {
 
-                const gb = new GlobalBuilder(folderPath, {
-                    processNum: this.settings.processNumber,
-                    threadNum: this.settings.threadNumber,
-                    asyncNum: this.settings.asyncWorkerNumber
-                });
+            if (!folders)
+                return;
 
-                this.cacheFile = gb.cacheFile;
+            for (const folder of folders) {
+                if (WorkspaceFolder.is(folder)) {
+                    const folderPath = uriToPath(folder.uri);
 
-                gb.build(() => {
-                    if (existsSync(this.cacheFile!))  // 缓存文件存在,则尝试读取缓存
-                        this.globalCaches.symbols.global = JSON.parse(readFileSync(this.cacheFile!, "utf-8"));
+                    const gb = new GlobalBuilder(folderPath, {
+                        processNum: this.settings.processNumber ? this.settings.processNumber : DEFAULT_SETTINGS.processNumber,
+                        threadNum: this.settings.threadNumber ? this.settings.threadNumber : DEFAULT_SETTINGS.threadNumber,
+                        asyncNum: this.settings.asyncWorkerNumber ? this.settings.asyncWorkerNumber : DEFAULT_SETTINGS.asyncWorkerNumber
+                    });
 
-                    this.documentsCaches[this.globalCaches.uri].hash = "";
+                    await update(50, LOCALE.t("server", "NSI4", false));
 
-                    // 重新进行分析
-                    this.parse(this.documents.get(this.globalCaches.uri)!.getText());
-                });
+                    this.cacheDir = gb.cacheDir;
+
+                    await new Promise<void>((res, rej) => gb.build(() => {
+                        update(100, LOCALE.t("server", "NSI5", false));
+
+                        res();
+
+                        this.documentsCaches[this.globalCaches.uri].hash = "";
+
+                        this.globalCaches.symbols.global.clear();
+                        this.globalCaches.backSteps = [];
+
+                        let needRebuild = false;
+                        readdirSync(this.cacheDir).forEach(file => {
+                            if (file.endsWith(".json") && basename(file).replace(extname(file), "").length === 32)
+                                needRebuild = true;
+                        })
+
+                        if (needRebuild)
+                            new Promise(gb.sucessCB.bind(gb)).then(
+                                () => this.parse(this.documents.get(this.globalCaches.uri)!.getText())
+                            )
+                        else
+                            // 重新进行分析
+                            this.parse(this.documents.get(this.globalCaches.uri)!.getText());
+                    }));
+
+
+                }
             }
+
         });
+
+
+    }
+
+    private async withServerProgress<T>(title: string, taskCB: (progress: { update: (percentage: number, message?: string) => Promise<void>; id: string }) => Promise<T>): Promise<T> {
+        const { type, data: id } = await this.connection.sendRequest<PrgNotify.StartResp>("progress/start", { type: "start", data: title });
+
+        this.globalCaches.progress.set(id, true);
+
+        try {
+            const result = await taskCB({ id, update: async (percentage, msg) => {
+                if (this.globalCaches.progress.get(id))
+                    await this.connection.sendRequest("progress/update", { type: "update", data: { id, message: msg, percentage } });
+                }});
+
+            await this.connection.sendRequest("progress/end", { type: "end", data: id });
+
+            return result;
+        } catch (e) {
+            if (this.globalCaches.progress.get(id))
+                await this.connection.sendRequest("progress/end", { type: "end", data: id });
+
+            throw e;
+        } finally {
+            this.globalCaches.progress.delete(id);
+        }
     }
 }
 
@@ -647,14 +772,17 @@ interface GlobalCache {
      * @summary 全局符号缓存。
      * @desc 该属性用于记录全局符号缓存。
      * @property {Map<string, Symbol>} searched 已搜索的符号。
-     * @property {Map<string, IFileCache>} global 全局符号缓存。
+     * @property {Map<string, RadixTree<SymbolInfo>>} global 全局符号缓存。
+     * @see RadixTree
+     * @see SymbolInfo
      * */
     symbols: {
         searched: Map<string, Symbol>;
-        global: IGlobalCache;
+        global: Map<LowercaseAlphabet, RadixTree<SymbolInfo>>;
     };
     uri: string;
     backSteps: string[];
+    progress: Map<string, boolean>;
     /**
      * @var flag
      * @summary 全局缓存标志。
@@ -687,6 +815,45 @@ export interface Settings {
     threadNumber: number;
     asyncWorkerNumber: number;
     autoSpawnImport: boolean;
+}
+
+
+export namespace PrgNotify {
+    interface DataProtocol {
+        type: string;
+        data?: any;
+    }
+
+
+    export interface StartRequ extends DataProtocol {
+        type: "start";
+        data: string;
+    }
+
+
+    export interface StartResp extends DataProtocol {
+        type: "start";
+        data: string;
+    }
+
+
+    export interface UpdateRequ extends DataProtocol {
+        type: "update";
+        data: {
+            id: string;
+            message?: string;
+            percentage?: number;
+        };
+    }
+
+
+    export interface EndRequ extends DataProtocol {
+        type: "end";
+    }
+
+
+    export type ProgressRequ = StartRequ | UpdateRequ | EndRequ;
+    export type ProgressResp = StartResp;
 }
 
 

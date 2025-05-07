@@ -18,6 +18,8 @@ import { Nullable } from "./other";
  * @desc
  * @copyright CC BY-NC-SA 2025. All rights reserved.
  * */
+
+
 export type Language = "en-US" | "zh-CN";
 
 export type Level = "strict" | "loose" | "ignore";
@@ -41,17 +43,9 @@ export interface Pending {
 }
 
 
-
-
-
-export interface IFileCache {
-    hash: string;
-    symbols: Record<string, ISymbolJSON>;
-}
-
-
-export interface IGlobalCache {
-    [file: string]: IFileCache;
+export interface SymbolInfo {
+    info: ISymbolJSON;
+    file: string;
 }
 
 
@@ -75,7 +69,7 @@ export interface ProcRequTask extends DataProtocol {
     data: {
         tid: number;
         task: any;
-    }
+    };
 }
 
 
@@ -170,6 +164,25 @@ export interface ConcurrentConfig {
     debug: boolean;
 }
 
+
+export interface GBConfig {
+    ext: string;
+    cacheDirName: string;
+    processNum: number;
+    threadNum: number;
+    asyncNum: number;
+}
+
+
 export type Disruptor = (data: any) => any | Promise<any>;
 
 export type Handler = (data: any) => Nullable<any>;
+
+type _alphabet<T extends string, Acc extends string = ""> =
+    T extends `${infer Head}${infer Tail}`
+        ? _alphabet<Tail, Acc | Head>
+        : Acc;  // 最后会多出一个""
+
+export type LowercaseAlphabet = Exclude<_alphabet<"abcdefghijklmnopqrstuvwxyz">, "">;
+export type UppercaseAlphabet = Uppercase<LowercaseAlphabet>;
+export type Letter = LowercaseAlphabet | UppercaseAlphabet;

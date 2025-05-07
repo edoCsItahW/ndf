@@ -60,7 +60,7 @@ export interface IAssignMark {
 }
 
 export interface IAssignment extends IInternalStatement {
-    modifier: Nullable<'export' | 'private'>;
+    modifier: Nullable<'export' | 'private' | 'public'>;
     name: IIdentifier;
     value: IExpression;
     marks: IAssignMark;
@@ -83,6 +83,7 @@ export interface ITemplateDef extends IInternalStatement {
     pos1Comments: IComment[];
     pos2Comments: IComment[];
     pos3Comments: IComment[];
+    pos4Comments: IComment[];
 
     separatorComments1: SeparatorComments;
     separatorComments2: SeparatorComments;
@@ -279,6 +280,7 @@ export interface IPropertyAssignExpr extends IInternalExpression {
 }
 
 export interface IArgument extends IInternalNode {
+    modifier: Nullable<'export' | 'public'>;
     name: IIdentifier;
     value: Nullable<IExpression>;
     operator: Nullable<'=' | 'is'>;

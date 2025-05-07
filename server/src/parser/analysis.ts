@@ -566,7 +566,7 @@ type ImportCallback = (names: string[], path?: string) => Symbol[] | string;
 
 export class Analyser implements IAnalyser {
     static deepCopy: boolean = false;
-    globalScope: Scope = new Scope([new Symbol("color", { line: 0, column: 0 }, new _GenericType())], "global");
+    globalScope: Scope = new Scope(undefined, "global");
     currentScope: Scope = this.globalScope;
     backsteps: string[] = [];
     errors: NDFError[] = [];

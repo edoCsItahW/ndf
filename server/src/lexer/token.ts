@@ -114,6 +114,8 @@ export enum TokenType {
     KW_UNNAMED,
     /** 关键字private */
     KW_PRIVATE,
+    /** 关键字public */
+    KW_PUBLIC,
 
     /** 加(+) */
     ADD,
@@ -272,7 +274,8 @@ export const KEYWORDS: Map<string, TokenType> = new Map([
     ["map", TokenType.KW_MAP],
     ["template", TokenType.KW_TEMPLATE],
     ["unnamed", TokenType.KW_UNNAMED],
-    ["private", TokenType.KW_PRIVATE]
+    ["private", TokenType.KW_PRIVATE],
+    ["public", TokenType.KW_PUBLIC]
 ]);
 
 
@@ -332,7 +335,8 @@ export const INVERSE_KEYWORDS = new Map<TokenType, string>([
     [TokenType.KW_MAP, "MAP"],
     [TokenType.KW_TEMPLATE, "template"],
     [TokenType.KW_UNNAMED, "unnamed"],
-    [TokenType.KW_PRIVATE, "private"]
+    [TokenType.KW_PRIVATE, "private"],
+    [TokenType.KW_PUBLIC, "public"]
 ]);
 
 

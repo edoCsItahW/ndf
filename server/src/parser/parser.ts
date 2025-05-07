@@ -214,6 +214,17 @@ export class Parser {
                             this.current!.pos, endPos(this.advance()!)
                         );
 
+                case TokenType.KW_PUBLIC:
+                    if (this.peek() && this.peek()!.type === TokenType.IDENTIFIER)
+                        return this.parseAssignment(TokenType.KW_PUBLIC);
+
+                    else
+                        throw new _SyntaxError(
+                            this.localet?.("NE2P2", enumToStr(TokenType, this.current!.type))
+                            || `**Identifier** expected, but found \`${enumToStr(TokenType, this.current!.type)}\``,
+                            this.current!.pos, endPos(this.advance()!)
+                        );
+
                 case TokenType.KW_TEMPLATE:
                     return this.parseTemplateDef();
 
@@ -271,8 +282,8 @@ export class Parser {
     private parseAssignment(modifier?: Optional<TokenType>): Assignment {
         const assignment = new Assignment(this.current!.pos);
 
-        if (modifier)
-            assignment.modifier = (assignment.marks.modifier = this.expect(modifier)).type === TokenType.KW_EXPORT ? "export" : "private";
+        if (modifier && [TokenType.KW_EXPORT, TokenType.KW_PRIVATE, TokenType.KW_PUBLIC].includes(modifier))
+            assignment.modifier = INVERSE_KEYWORDS.get((assignment.marks.modifier = this.expect(modifier)).type)! as "export" | "private" | "public";
 
         assignment.name = this.parseIdentifier(assignment);
 
@@ -334,9 +345,11 @@ export class Parser {
 
         templateDef.marks.is = this.expect(TokenType.KW_IS);
 
+        templateDef.pos3Comments = this.extractComments();
+
         templateDef.extend = this.parseIdentifier();
 
-        templateDef.pos3Comments = this.extractComments();
+        templateDef.pos4Comments = this.extractComments();
 
         this.expect(TokenType.LPAREN);
 
@@ -1537,8 +1550,8 @@ export class Parser {
         let haveOne: boolean = false;  // 至少进行类型注解或赋值其中一项
         const argument = new Argument(this.current!.pos, belong);
 
-        if (this.inScope() && this.current?.type === TokenType.KW_EXPORT)
-            argument.modifier = this.advance()!.type === TokenType.KW_EXPORT ? "export" : undefined;
+        if (this.inScope() && [TokenType.KW_PUBLIC, TokenType.KW_EXPORT].includes(this.current!.type))
+            argument.modifier = this.advance()!.type === TokenType.KW_EXPORT ? "export" : "public";
 
         argument.name = this.parseIdentifier(argument);
 

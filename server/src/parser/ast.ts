@@ -281,7 +281,7 @@ export class Assignment extends InternalStatement implements IAssignment {
      * @desc 该属性记录了赋值语句的修饰符，用于表示变量的访问权限。
      * @return {string} 赋值语句修饰符。
      * */
-    modifier: Nullable<"export" | "private">;
+    modifier: Nullable<"export" | "private" | "public">;
 
     /**
      * @var name
@@ -364,6 +364,7 @@ export class TemplateDef extends InternalStatement implements ITemplateDef {
     pos1Comments: Comment[] = [];
     pos2Comments: Comment[] = [];
     pos3Comments: Comment[] = [];
+    pos4Comments: Comment[] = [];
     separatorComments1: SeparatorComments = [];
     separatorComments2: SeparatorComments = [];
 
@@ -386,6 +387,7 @@ export class TemplateDef extends InternalStatement implements ITemplateDef {
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
             pos2Comments: this.pos2Comments.map(comment => comment.toJSON()),
             pos3Comments: this.pos3Comments.map(comment => comment.toJSON()),
+            pos4Comments: this.pos4Comments.map(comment => comment.toJSON()),
             separatorComments1: this.separatorComments1.map(
                 comments => comments.map(comment => comment.toJSON())
             ),
@@ -1190,7 +1192,7 @@ export class PropertyAssignExpr extends InternalExpression implements IPropertyA
 export class Argument extends InternalNode implements IArgument {
     protected _nodeName: string = "Argument";
     type: IType = { type: BaseType.UNNEEDED };
-    modifier: Nullable<"export">;
+    modifier: Nullable<"export" | "public">;
     annotation: Nullable<TypeRef>;
     name: Identifier = DEFAULT_IDENTIFIER;
     operator: Nullable<"=" | "is">;

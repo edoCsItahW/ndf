@@ -61,3 +61,10 @@ export interface IType {
     name?: string;
     type: BaseType;
 }
+
+
+export interface IRadixNode<T> {
+    children: Map<string, IRadixNode<T>>;
+    isEnd: boolean;
+    value?: T;
+}

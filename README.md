@@ -67,9 +67,7 @@ NDF语言是一种用于描述游戏数据的脚本语言。
   当构建任务运行时,根目录下会生成`.ndf-cache`文件夹,里面包含了全局符号的缓存。
 
   > [!NOTE]
-  > 1. 构建任务(目前)是积累式的,删除后将重置进度.
-  > 2. 如果需要全局符号搜索功能,请尽量不要删除`.ndf-cache`文件夹,尽管其会占用较多磁盘空间。
-  > 3. 在构建期间,`.ndf-cache`文件夹中文件频繁创建和删除,这是正常现象
+  > 在构建期间,`.ndf-cache`文件夹中文件频繁创建和删除,这是正常现象
 
 - `processNumber`:  
   构建任务进程数,默认为3。
@@ -77,20 +75,19 @@ NDF语言是一种用于描述游戏数据的脚本语言。
   > 该设置可能会影响构建速度,但过多可能会导致不可预期的现象.
 
 - `threadNumber`:  
-  每一个进程的线程数,默认为当前CPU核数/2。
+  每一个进程的线程数,默认为当前`CPU核数/2`。
   > [!WARNING]
   > 该设置可能会影响构建速度,但过多可能会导致不可预期的现象.
 
 - `asyncWorkerNumber`:  
-  每个线程的异步工作者数,默认为10。
+  每个线程的异步工作者数,默认为`10`。
 
 - `autoSpawnImport`:  
-  自动注入全局符号导入,默认为true。开启后将会在文件头部注入全局符号导入注释。
+  自动注入全局符号导入,默认为`true`。开启后将会在文件头部注入全局符号导入注释。
 
 ## 已知问题
 
-- 全局构建任务未按预期一次性完成,这是并行同步或确认机制问题,但无伤大雅,甚至能缓解并行压力.
-- 某些文件在未构建任务未完成时,其中某些全局符号可能无法正确解析并自动导入.
+暂时没有已知问题,但如果有的话,请在[issues](https://github.com/edoCsItahW/ndf/issues)中留言。
 
 ## 待办事项
 
@@ -182,10 +179,7 @@ Location: `File > Preferences > Settings > Extensions > NDF`
   global symbols.
 
   > [!NOTE]
-  > 1. The build task (currently) is cumulative; deleting it will reset the progress.
-  > 2. If global symbol search functionality is needed, do not delete the `.ndf-cache` folder, as it will occupy significant disk space.
-  > 3. During the build process, files in the `.ndf-cache` folder are frequently created and deleted, which is normal
-       behavior.
+  > During the build process, files in the `.ndf-cache` folder are frequently created and deleted, which is normal behavior.
 
 - `processNumber`:  
   Number of build task processes, default is `3`.
@@ -206,10 +200,7 @@ Location: `File > Preferences > Settings > Extensions > NDF`
 
 ## Known Issues
 
-- The global build task does not complete as expected in one go, which is due to parallel synchronization or
-  confirmation mechanism issues. However, this is not critical and can even alleviate parallel pressure.
-- In some files, certain global symbols may not be correctly parsed and automatically imported if the build task has not
-  completed.
+Currently, there are no known issues, but if any arise, please leave a comment in the [issues](https://github.com/edoCsItahW/ndf/issues) section.
 
 ## Todo
 

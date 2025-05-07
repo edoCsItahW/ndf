@@ -30,6 +30,18 @@ export const locales: ILocalePack = {
         NSE2: {
             "zh-CN": "无效的导入路径'{0}'",
             "en-US": "Invalid import path '{0}'"
+        },
+        NSI3: {
+            "zh-CN": "全局符号构建任务正在运行",
+            "en-US": "Global symbol building task is running"
+        },
+        NSI4: {
+            "zh-CN": "正在将全局符号信息写入磁盘文件",
+            "en-US": "Writing global symbol information to disk file"
+        },
+        NSI5: {
+            "zh-CN": "全局符号构建任务完成",
+            "en-US": "Global symbol information to disk file"
         }
     },
     lexer: {

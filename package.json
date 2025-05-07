@@ -4,7 +4,7 @@
 	"description": "The NDF language is a scripting language used to describe game data, and this extension provides partial support for the language.",
 	"author": "SongTao Xiao",
 	"license": "CC BY-NC-SA 4.0",
-	"version": "2.2.2",
+	"version": "2.2.4",
 	"publisher": "2207150234",
 	"repository": {
 		"type": "git",
@@ -18,7 +18,7 @@
 		"NDF"
 	],
 	"engines": {
-		"vscode": "^1.75.0"
+		"vscode": "^1.99.0"
 	},
 	"activationEvents": [],
 	"main": "./client/out/extension",
@@ -116,6 +116,11 @@
 					"default": true,
 					"description": "Whether to inject import comments in the code when a symbol is found in the global symbol cache.(在全局符号缓存中找到符号时是否在代码中注入导入注释.)"
 				}
+			}
+		},
+		"configurationDefaults": {
+			"[ndf]": {
+				"editor.semanticHighlighting.enabled": true
 			}
 		}
 	},
