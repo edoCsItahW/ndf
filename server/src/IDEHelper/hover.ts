@@ -78,6 +78,7 @@ export class Hover {
 
             if (blueprintSymbol?.type instanceof TemplateType || blueprintSymbol?.type instanceof ObjectType) {  // 实例化自模
                 const symbol = blueprintSymbol.type.prototypeScope!.lookup(node.name.value);
+
                 if (symbol)
                     type = symbol.type;
             }

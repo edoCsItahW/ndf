@@ -388,7 +388,7 @@ export class Parser {
     private parseUnnamedObj(): UnnamedObj {
         const unnamedObj = new UnnamedObj(this.current!.pos);
 
-        this.expect(TokenType.KW_UNNAMED);
+        unnamedObj.marks.unnamed = this.expect(TokenType.KW_UNNAMED);
 
         unnamedObj.blueprint = this.parseIdentifier();
 
@@ -441,7 +441,7 @@ export class Parser {
             if (fileIptPattern.test(text)) {
                 const [, quote, file, imports] = text.match(fileIptPattern)!;
 
-                const fileIptComment = new FileImportComment(this.advance()!.pos);
+                const fileIptComment = new FileImportComment(this.current!.pos, this.advance()!.value);
 
                 fileIptComment.path = file;
                 fileIptComment.items = imports.split(",").map(item => item.trim()).filter(i => i.length);
@@ -455,7 +455,7 @@ export class Parser {
             else if (libIptPattern.test(text)) {
                 const [, imports] = text.match(libIptPattern)!;
 
-                const libIptComment = new LibImportComment(this.advance()!.pos);
+                const libIptComment = new LibImportComment(this.current!.pos, this.advance()!.value);
 
                 libIptComment.items = imports.split(",").map(item => item.trim()).filter(i => i.length);
 
@@ -1204,7 +1204,7 @@ export class Parser {
     private parseMapDef(): Expression {
         const mapDef = new MapDef(this.current!.pos);
 
-        this.expect(TokenType.KW_MAP);
+        mapDef.marks.map = this.expect(TokenType.KW_MAP);
 
         mapDef.pos1Comments = this.extractComments();
 
@@ -1551,7 +1551,7 @@ export class Parser {
         const argument = new Argument(this.current!.pos, belong);
 
         if (this.inScope() && [TokenType.KW_PUBLIC, TokenType.KW_EXPORT].includes(this.current!.type))
-            argument.modifier = this.advance()!.type === TokenType.KW_EXPORT ? "export" : "public";
+            argument.modifier = (argument.marks.modifier = this.advance()!).type === TokenType.KW_EXPORT ? "export" : "public";
 
         argument.name = this.parseIdentifier(argument);
 
@@ -1563,7 +1563,7 @@ export class Parser {
         }
 
         if (this.inScope() && this.current && [TokenType.ASSIGN, TokenType.KW_IS].includes(this.current.type)) {
-            argument.operator = this.current?.type === TokenType.ASSIGN ? "=" : "is";
+            argument.operator = (argument.marks.operator = this.current)?.type === TokenType.ASSIGN ? "=" : "is";
 
             this.advance();
 

@@ -12,7 +12,7 @@
  * @version 1.1
  * @date 2025/04/25 00:06
  * @desc
- * @copyrigh-t CC BY-NC-SA 2025. All rights reserved.
+ * @copyright CC BY-NC-SA 2025. All rights reserved.
  * */
 import { IPos, IType, Nullable } from "./other";
 import { Token } from "../lexer";
@@ -89,9 +89,14 @@ export interface ITemplateDef extends IInternalStatement {
     separatorComments2: SeparatorComments;
 }
 
+export interface IUnnamedObjMark {
+    unnamed?: Token;
+}
+
 export interface IUnnamedObj extends IInternalStatement {
     blueprint: IIdentifier;
     args: IArgument[];
+    marks: IUnnamedObjMark;
 
     pos1Comments: IComment[];
 
@@ -105,12 +110,12 @@ export interface IInternalComment extends IInternalStatement {}
 
 export type IComment = ILeafComment | IInternalComment;
 
-export interface IFileImportComment extends IInternalComment {
+export interface IFileImportComment extends ILeafComment {
     path: string;
     items: string[];
 }
 
-export interface ILibImportComment extends IInternalComment {
+export interface ILibImportComment extends ILeafComment {
     items: string[];
 }
 
@@ -240,8 +245,13 @@ export interface IGuidCall extends ILeafExpression {
     pos2Comments: IComment[];
 }
 
+export interface IMapDefMark {
+    map?: Token;
+}
+
 export interface IMapDef extends IInternalExpression {
     pairs: IPair[];
+    marks: IMapDefMark;
 
     pos1Comments: IComment[];
 
@@ -273,10 +283,20 @@ export interface ITypeConstructor extends IInternalExpression {
     separatorComments: SeparatorComments;
 }
 
+export interface IPropertyAssignMark {
+    modifier?: Token;
+}
+
 export interface IPropertyAssignExpr extends IInternalExpression {
     modifier: Nullable<'private'>;
     name: IIdentifier;
     value: IExpression;
+    marks: IPropertyAssignMark;
+}
+
+export interface IArgumentMMark {
+    modifier?: Token;
+    operator?: Token;
 }
 
 export interface IArgument extends IInternalNode {
@@ -285,6 +305,7 @@ export interface IArgument extends IInternalNode {
     value: Nullable<IExpression>;
     operator: Nullable<'=' | 'is'>;
     annotation: Nullable<ITypeRef>;
+    marks: IArgumentMMark;
 
     pos1Comments: IComment[];
 }
@@ -296,7 +317,6 @@ export interface IInteger extends ILiteral, ILeafNode {
 }
 
 export interface IFloat extends ILiteral, ILeafNode {
-
 }
 
 export interface IBoolean extends ILiteral, ILeafNode {
@@ -304,7 +324,6 @@ export interface IBoolean extends ILiteral, ILeafNode {
 }
 
 export interface IString extends ILiteral, ILeafNode {
-
 }
 
 export interface INil extends ILiteral, ILeafNode {

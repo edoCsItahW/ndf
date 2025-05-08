@@ -6,6 +6,13 @@ VS Code 插件`NDF`的变更日志
 该项目遵循[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## 2.3.4 - 2025-05-09
+
+### Added
+
+1. 新增了语义高亮支持
+
+
 ## 2.2.4 - 2025-05-06
 
 ### Fixed

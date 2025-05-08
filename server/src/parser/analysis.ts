@@ -970,8 +970,29 @@ export class Analyser implements IAnalyser {
     visitGenericType(node: GenericType): Type {
         let symbol = this.globalScope.resolve(node.name.value);  // 由于其特性,只能在全局作用域中寻找
 
-        if (symbol)
+        if (symbol) {
+            node.type = symbol.type;
             return symbol.type;
+        }
+
+        if (node.name.value.toLowerCase() === "list") {
+            const vectorType = new VectorType(BaseType.VECTOR, "List");
+
+            vectorType.elementType = this.unrepeatedType(node.typeParams.map(param => this.visitTypeRef(param)));
+
+            node.type = vectorType;
+            return vectorType;
+        }
+
+        else if (node.name.value.toLowerCase() === "map") {
+            const mapType = new MapType(BaseType.MAP, "Map");
+
+            mapType.keyType = this.unrepeatedType(node.typeParams.map(param => this.visitTypeRef(param)));
+            mapType.valueType = this.unrepeatedType(node.typeParams.map(param => this.visitTypeRef(param)));
+
+            node.type = mapType;
+            return mapType;
+        }
 
         else {
             const genericType = new _GenericType(BaseType.GENERIC, node.name.value);
@@ -1465,9 +1486,9 @@ export class Analyser implements IAnalyser {
         return new Type(BaseType.BOOLEAN);
     }
 
-    @methodDebug(analyserDebug, "visitString")
+    @methodDebug(analyserDebug, "visitStr")
     @traceback()
-    visitString(node: Str): Type {
+    visitStr(node: Str): Type {
         return new Type(BaseType.STRING);
     }
 

@@ -16,3 +16,5 @@
 export * from './completion';
 export * from './hover';
 export * from './locale';
+export * from './semanticToken';
+export * from './globalBuilder';

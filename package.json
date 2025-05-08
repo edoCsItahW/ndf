@@ -4,7 +4,7 @@
 	"description": "The NDF language is a scripting language used to describe game data, and this extension provides partial support for the language.",
 	"author": "SongTao Xiao",
 	"license": "CC BY-NC-SA 4.0",
-	"version": "2.2.4",
+	"version": "2.3.4",
 	"publisher": "2207150234",
 	"repository": {
 		"type": "git",
@@ -122,6 +122,94 @@
 			"[ndf]": {
 				"editor.semanticHighlighting.enabled": true
 			}
+		},
+		"semanticTokenTypes": [
+			{
+				"id": "Template",
+				"superType": "class",
+				"description": "NDF模板"
+			},
+			{
+				"id": "Object",
+				"superType": "class",
+				"description": "NDF对象"
+			},
+			{
+				"id": "Blueprint",
+				"superType": "class",
+				"description": "NDF蓝图"
+			},
+			{
+				"id": "Variable",
+				"superType": "variable",
+				"description": "NDF变量"
+			},
+			{
+				"id": "UUID",
+				"superType": "label",
+				"description": "NDF UUID"
+			},
+			{
+				"id": "TemplateParam",
+				"superType": "macro",
+				"description": "NDF模板参数"
+			},
+			{
+				"id": "Generic",
+				"superType": "type",
+				"description": "NDF泛型"
+			},
+			{
+				"id": "String",
+				"superType": "string",
+				"description": "NDF字符串"
+			},
+			{
+				"id": "Number",
+				"superType": "number",
+				"description": "NDF数字"
+			},
+			{
+				"id": "Keyword",
+				"superType": "keyword",
+				"description": "NDF关键字"
+			},
+			{
+				"id": "Property",
+				"superType": "property",
+				"description": "NDF属性"
+			},
+			{
+				"id": "Reference",
+				"superType": "label",
+				"description": "NDF引用"
+			},
+			{
+				"id": "Comment",
+				"superType": "comment",
+				"description": "NDF注释"
+			},
+			{
+				"id": "ImportComment",
+				"superType": "comment",
+				"description": "NDF导入注释"
+			}
+		],
+		"semanticTokenColors": {
+			"Template": "#B200B2",
+			"Object": "#924949",
+			"Blueprint": "#56A8F5",
+			"Variable": "#AA4926",
+			"UUID": "#5F8C8A",
+			"TemplateParam": "#D35FD0",
+			"Generic": "#C77DBB",
+			"String": "#6AAB73",
+			"Number": "#2AACB8",
+			"Keyword": "#CF8E6D",
+			"Property": "#9373A5",
+			"Reference": "#8787C4",
+			"Comment": "#7A7E85",
+			"ImportComment": "#5F826B"
 		}
 	},
 	"scripts": {

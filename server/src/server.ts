@@ -15,6 +15,7 @@
  * @copyright CC BY-NC-SA 2025. All rights reserved.
  * */
 import {
+    CompletionParams,
     Connection,
     DidChangeConfigurationNotification,
     DidChangeConfigurationParams,
@@ -30,7 +31,8 @@ import {
     SemanticTokensPartialResult,
     TextDocumentChangeEvent,
     TextDocumentPositionParams,
-    WorkspaceFolder
+    WorkspaceFolder,
+    CompletionItem
 } from "vscode-languageserver";
 import {
     createConnection,
@@ -46,16 +48,19 @@ import { cpus } from "node:os";
 import { createHash } from "node:crypto";
 import { Analyser, analyze, InternalNode, LeafNode, Parser, Program, Scope, Symbol, Visitor } from "./parser";
 import { Language, Level, LowercaseAlphabet, Nullable, SymbolInfo } from "./types";
-import { Hover as HoverHelper, LOCALE } from "./IDEHelper";
-import { GlobalBuilder } from "./IDEHelper/globalBuilder";
+import {
+    Hover as HoverHelper,
+    LOCALE,
+    GlobalBuilder,
+    TokenLegend,
+    TokenModifier,
+    SemanticCollector
+} from "./IDEHelper";
 import { NDFError, NDFWarning } from "./expection";
 import { Lexer, Processor, Token } from "./lexer";
 import { methodDebug } from "./debug";
 import { RadixTree } from "./utils";
 import { readdirSync } from "fs";
-
-
-//import { ProgressLocation, window } from "vscode";
 
 
 /**
@@ -150,7 +155,7 @@ class Server {
 
         // 功能
         this.connection.onHover(this.hover.bind(this));  // 悬停提示
-        // this.connection.onCompletion(this.completion.bind(this));  // 代码完成
+         this.connection.onCompletion(this.completion.bind(this));  // 代码完成
         // this.connection.onCompletionResolve(this.completionResolve.bind(this))  // 代码完成解析
         // this.connection.onDocumentFormatting(this.formatting.bind(this))  // 格式化
         // this.connection.onSignatureHelp(this.signatureHelp.bind(this))  // 签名帮助
@@ -213,24 +218,12 @@ class Server {
                 // 签名帮助: 暂不支持
                 signatureHelpProvider: undefined,
 
-                // 语义令牌: 暂不支持
+                // 语义令牌: 支持
                 semanticTokensProvider: {
                     legend: {
-                        tokenTypes: [
-                            "template",
-                            "variable",
-                            "uuid",
-                            "templateParam",
-                            "member",
-                            "generic",
-                            "memberAccess",
-                            "string",
-                            "number"
-                        ],
-                        tokenModifiers: [
-                            "export",
-                            "private"
-                        ]
+                        tokenTypes: Object.keys(TokenLegend).filter(k => isNaN(Number(k))),
+//                        tokenModifiers: Object.keys(TokenModifier).filter(k => isNaN(Number(k)))
+                        tokenModifiers: []
                     },
                     full: {
                         delta: false,  // 增量更新
@@ -431,10 +424,15 @@ class Server {
 
     @methodDebug(serverDebug)
     private semanticTokens(params: SemanticTokensParams): SemanticTokensPartialResult {
-        console.log(params.textDocument, params.partialResultToken, params.workDoneToken);
+        const collector = new SemanticCollector(this.documentsCaches[params.textDocument.uri].ast!, false);
+
         return {
-            data: [1]
+            data: collector.visit()
         };
+    }
+
+    private completion(params: CompletionParams): CompletionItem[] {
+        return [];
     }
 
     /**

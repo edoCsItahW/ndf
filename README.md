@@ -45,6 +45,9 @@ NDF语言是一种用于描述游戏数据的脚本语言。
    >    目前测试的内置库符号只有`TBaseClass`,且暂不支持自动注入
    >    - `import symbol1, symbol2`
 
+8. 支持语义高亮
+   ![semantic highlighting](./static/semantic.png)
+
 ## 依赖
 
 暂时没有依赖,如果非要说有的话,你可能需要一款使用该语言的游戏
@@ -150,6 +153,8 @@ support, representing a milestone progress.
    >    Currently, the only tested built-in library symbol is `TBaseClass`, and automatic injection is not supported.
    >    - `import symbol1, symbol2`
 
+8. Support for semantic highlighting
+   ![semantic highlighting](./static/semantic.png)
 
 
 ## Requirements

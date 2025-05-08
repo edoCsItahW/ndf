@@ -30,10 +30,13 @@ import {
     IGuidCall,
     IIdentifier,
     IIndexAccess,
-    IInteger, IInternalExpression, IInternalNode,
+    IInteger,
+    IInternalExpression,
+    IInternalNode,
     IInternalStatement,
     IInternalTypeRef,
-    ILeafExpression, ILeafNode,
+    ILeafExpression,
+    ILeafNode,
     ILeafStatement,
     ILeafTypeRef,
     ILiteral,
@@ -58,8 +61,20 @@ import {
     IUnnamedObj,
     IVectorDef,
     Nullable,
-    IType, IAssignMark, ITemplateDefMark, IMemberAssignMark, IComment,
-    SeparatorComments, IFileImportComment, ILeafComment, IInternalComment, ILibImportComment, ICommonComment
+    IType,
+    IAssignMark,
+    ITemplateDefMark,
+    IMemberAssignMark,
+    IComment,
+    SeparatorComments,
+    IFileImportComment,
+    ILeafComment,
+    IInternalComment,
+    ILibImportComment,
+    ICommonComment,
+    IUnnamedObjMark,
+    IPropertyAssignMark,
+    IArgumentMMark, IMapDefMark
 } from "../types";
 
 
@@ -409,7 +424,7 @@ export class UnnamedObj extends InternalStatement implements IUnnamedObj {
     args: Argument[] = [];
     blueprint: Identifier = DEFAULT_IDENTIFIER;
     type: IType = { type: BaseType.UNNEEDED };
-    marks = undefined;
+    marks: IUnnamedObjMark = {};
 
     pos1Comments: Comment[] = [];
     separatorComments: SeparatorComments = [];
@@ -449,18 +464,14 @@ export abstract class InternalComment extends InternalStatement implements IInte
 export type Comment = LeafComment | InternalComment;
 
 
-export class FileImportComment extends InternalComment implements IFileImportComment {
+export class FileImportComment extends LeafComment implements IFileImportComment {
     protected _nodeName: string = "FileImportComment";
     items: string[] = [];
     path: string = "";
     type: IType = { type: BaseType.UNNEEDED };
 
-    constructor(public pos: IPos) {
+    constructor(public pos: IPos, public readonly value: string) {
         super();
-    }
-
-    get children(): GeneralAST[] {
-        return [];
     }
 
     toJSON(): object {
@@ -477,12 +488,12 @@ export class FileImportComment extends InternalComment implements IFileImportCom
 }
 
 
-export class LibImportComment extends InternalComment implements ILibImportComment {
+export class LibImportComment extends LeafComment implements ILibImportComment {
     protected _nodeName: string = "LibImportComment";
     items: string[] = [];
     type: IType = { type: BaseType.UNNEEDED };
 
-    constructor(public pos: IPos) {
+    constructor(public pos: IPos, public readonly value: string) {
         super();
     }
 
@@ -1027,6 +1038,7 @@ export class MapDef extends InternalExpression implements IMapDef {
     protected _nodeName: string = "MapDef";
     pairs: Pair[] = [];
     type: IType = { type: BaseType.MAP };
+    marks: IMapDefMark = {};
 
     pos1Comments: Comment[] = [];
     separatorComments: SeparatorComments = [];
@@ -1165,6 +1177,7 @@ export class PropertyAssignExpr extends InternalExpression implements IPropertyA
     name: Identifier = DEFAULT_IDENTIFIER;
     type: IType = { type: BaseType.UNNEEDED };
     value: Expression = DEFAULT_IDENTIFIER;
+    marks: IPropertyAssignMark = {};
 
     constructor(public pos: IPos) {
         super();
@@ -1197,6 +1210,7 @@ export class Argument extends InternalNode implements IArgument {
     name: Identifier = DEFAULT_IDENTIFIER;
     operator: Nullable<"=" | "is">;
     value: Nullable<Expression>;
+    marks: IArgumentMMark = {};
 
     pos1Comments: Comment[] = [];
 
@@ -1295,7 +1309,7 @@ export class Bool extends Literal implements IBoolean {
 
 
 export class Str extends Literal implements IString {
-    protected _nodeName: string = "String";
+    protected _nodeName: string = "Str";
     type: IType = { type: BaseType.STRING };
 
     constructor(public pos: IPos, public value: string = "") {
