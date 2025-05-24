@@ -5,6 +5,22 @@ VS Code plugin `NDF` change log
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## 2.4.5 - 2025-05-23
+
+### Added
+
+1. Implemented code completion functionality
+
+### Changed
+
+1. Changed the default setting for automatically injecting import comments to false
+
+### Fixed
+
+1. Fixed the issue of type information being lost during global symbol construction.
+
+
 ## 2.3.4 - 2025-05-09
 
 ### Added
@@ -21,7 +37,8 @@ and this project adheres to[Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
-1. Optimized the speed and performance of global symbol construction, achieving nearly 100% symbol construction in one go
+1. Optimized the speed and performance of global symbol construction, achieving nearly 100% symbol construction in one
+   go
 2. Improved the speed of global symbol lookup during file parsing, reducing it from minutes to seconds
 
 
@@ -38,7 +55,8 @@ and this project adheres to[Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 1. Resolved the issue where the underlying type of `map` type was displayed on hover.
 2. Addressed the issue where the syntax analysis omitted the analysis of **property definition** syntax.
-3. Fixed the parsing failure in syntax analysis for `template parameters`, `member assignments`, and `object parameters` when assignments were followed by line breaks and comments.
+3. Fixed the parsing failure in syntax analysis for `template parameters`, `member assignments`, and `object parameters`
+   when assignments were followed by line breaks and comments.
 
 ### Added
 
@@ -55,7 +73,8 @@ and this project adheres to[Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
-1. Fixed the issue where member types were not displayed during hover for anonymous object instantiation when the blueprint could not be found.
+1. Fixed the issue where member types were not displayed during hover for anonymous object instantiation when the
+   blueprint could not be found.
 2. Fixed the issue where the variable regex matching in highlighting was too broad.
 
 

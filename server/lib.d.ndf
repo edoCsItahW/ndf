@@ -1,1 +1,21 @@
 template TBaseClass [] is _ ()
+
+template TDeckDivisionDescriptor [
+    DescriptorId: GUID,
+    CfgName: string,
+    DivisionName: string,
+    InterfaceOrder: float,
+    DivisionPowerClassification: string,
+    DivisionCoalition: int,
+    DivisionTags: LIST<string>,
+    DescriptionHintTitleToken: string,
+    MaxActivationPoints: int,
+    PackList: LIST<DeckPackDescriptor>,
+    DivisionRule: TDeckDivisionRule,
+    MaxActivationPoints: int,
+    CostMatrix: MAP<int, LIST<int>>,
+    EmblemTexture: string,
+    PortraitTexture: string,
+    TypeTexture: string,
+    CountryId: string
+] is TBaseClass ()

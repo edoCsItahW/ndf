@@ -14,7 +14,7 @@
  * @desc 定义令牌相关类
  * @copyright CC BY-NC-SA 2024. All rights reserved.
  * */
-import { IPos } from "../types";
+import { IPos, TokenState } from "../types";
 import { enumToStr } from "../utils";
 
 
@@ -353,6 +353,72 @@ export const WHITESPACE_CHARS: Map<string, string> = new Map([
 ]);
 
 
+export function getCategory(type: TokenType): TokenCategory {
+    switch (type) {
+        case TokenType.INT:
+        case TokenType.FLOAT:
+        case TokenType.STRING:
+        case TokenType.REFERENCE:
+            return TokenCategory.LITERAL;
+        case TokenType.KW_INT:
+        case TokenType.KW_FLOAT:
+        case TokenType.KW_STRING:
+        case TokenType.KW_BOOL:
+        case TokenType.KW_IS:
+        case TokenType.KW_EXPORT:
+        case TokenType.KW_NIL:
+        case TokenType.KW_TRUE:
+        case TokenType.KW_FALSE:
+        case TokenType.KW_DIV:
+        case TokenType.KW_MAP:
+        case TokenType.KW_TEMPLATE:
+        case TokenType.KW_UNNAMED:
+        case TokenType.KW_PRIVATE:
+        case TokenType.KW_PUBLIC:
+            return TokenCategory.KEYWORD;
+        case TokenType.ADD:
+        case TokenType.SUB:
+        case TokenType.MUL:
+        case TokenType.DIV:
+        case TokenType.MOD:
+        case TokenType.QUESTION:
+        case TokenType.COLON:
+        case TokenType.ASSIGN:
+        case TokenType.BIN_OR:
+        case TokenType.BIN_AND:
+        case TokenType.LT:
+        case TokenType.GT:
+        case TokenType.LE:
+        case TokenType.GE:
+        case TokenType.EQ:
+        case TokenType.NE:
+        case TokenType.NOT:
+        case TokenType.LPAREN:
+        case TokenType.RPAREN:
+        case TokenType.LBRACE:
+        case TokenType.RBRACE:
+        case TokenType.LBRACKET:
+        case TokenType.RBRACKET:
+        case TokenType.COMMA:
+        case TokenType.DOT:
+        case TokenType.DOLLAR:
+        case TokenType.TILDE:
+            return TokenCategory.OPERATOR;
+        case TokenType.COMMENT_BLOCK:
+        case TokenType.COMMENT_LINE:
+            return TokenCategory.COMMENT;
+        case TokenType.NEWLINE:
+            return TokenCategory.WHITESPACE;
+        case TokenType.IDENTIFIER:
+        case TokenType.EOF:
+            return TokenCategory.OTHER;
+        case TokenType.UNKNOWN:
+        case TokenType.ERROR:
+            return TokenCategory.INVALID;
+    }
+}
+
+
 /**
  * @class Token
  * @classdesc 令牌类
@@ -362,6 +428,10 @@ export const WHITESPACE_CHARS: Map<string, string> = new Map([
  * @property category {TokenCategory} 令牌类别
  * */
 export class Token {
+    state: TokenState = {
+        stmtStart: false
+    };
+
     /**
      * @constructor
      * @param {TokenType} type 令牌类型

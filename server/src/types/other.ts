@@ -16,6 +16,10 @@
  * */
 
 
+import { TokenType } from "../lexer";
+import { ITypeJSON } from "./analysis";
+
+
 /** @interface IError
  * @description 错误信息对象
  * @property {string} func - 函数名
@@ -57,9 +61,17 @@ export enum BaseType {
 }
 
 
+export interface TokenState {
+    stmtStart: boolean;
+    inferNext?: TokenType[];
+}
+
+
 export interface IType {
     name?: string;
     type: BaseType;
+    toJSON?: (safe?: boolean) => ITypeJSON;
+    toString?: () => string;
 }
 
 

@@ -10,6 +10,7 @@ Access token在哪拿
 创建新的
 名字随便一个
 作用域(Scopes)选择Full Access
+ODGxj9CN8tXVsyVPDymsyamYL4uY6JkUWN7kcLgppjuvFdf9ZZjKJQQJ99BEACAAAAAAAAAAAAASAZDO3x9g
 
 如何下架插件
 

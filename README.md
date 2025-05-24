@@ -32,7 +32,8 @@ NDF语言是一种用于描述游戏数据的脚本语言。
    可以解析文件中通过全局(未显式)导入的符号
 
 7. 支持自动注入全局符号导入(自动显式导入)  
-   将已解析的全局符号的导入注释插入到文件的头部
+   将已解析的全局符号的导入注释插入到文件的头部。即使不导入，全局符号查找功能也能识别全局符号，
+   导入只是为了加快解析速度，但在优化后只是锦上添花。
 
    > [!TIP]  
    > 导入注释语法:
@@ -47,6 +48,9 @@ NDF语言是一种用于描述游戏数据的脚本语言。
 
 8. 支持语义高亮
    ![semantic highlighting](./static/semantic.png)
+
+9. 支持代码自动补全  
+   ![auto-completion](./static/completion.png)
 
 ## 依赖
 
@@ -91,6 +95,9 @@ NDF语言是一种用于描述游戏数据的脚本语言。
 ## 已知问题
 
 暂时没有已知问题,但如果有的话,请在[issues](https://github.com/edoCsItahW/ndf/issues)中留言。
+
+1. 在文件过大时，解析时长过于漫长，导致打开其它文件时不会进行解析。  
+2. 由于全局符号是在解析时是在文件作用域内进行的，所以在其定义中包含全局符号时，将会丧失关联信息。
 
 ## 待办事项
 
@@ -140,7 +147,9 @@ support, representing a milestone progress.
    Can parse symbols globally imported (implicitly) in the file
 
 7. Support for automatic injection of global symbol imports (automatic explicit import)  
-   Inserts parsed global symbol import comments into the file header
+   Inserts parsed global symbol import comments into the file header. This means that even if the import is not
+   performed, the global symbol lookup function can recognize global symbols, and the import is only for speed optimization,
+   but it is a nice touch after optimization.
 
    > [!TIP]
    > Import comment syntax:
@@ -156,6 +165,8 @@ support, representing a milestone progress.
 8. Support for semantic highlighting
    ![semantic highlighting](./static/semantic.png)
 
+9. Support for code auto-completion
+   ![auto-completion](./static/completion.png)
 
 ## Requirements
 
@@ -200,12 +211,16 @@ Location: `File > Preferences > Settings > Extensions > NDF`
   Number of asynchronous workers per thread, default is `10`.
 
 - `autoSpawnImport`:  
-  Automatic injection of global symbol imports, default is `true`. Enabling this will inject global symbol import
+  Automatic injection of global symbol imports, default is `false`. Enabling this will inject global symbol import
   comments into the file header.
 
 ## Known Issues
 
-Currently, there are no known issues, but if any arise, please leave a comment in the [issues](https://github.com/edoCsItahW/ndf/issues) section.
+please leave a comment in the [issues](https://github.com/edoCsItahW/ndf/issues) section.
+
+1. When a file is too large, the parsing time is too long, which causes the opening of other files to not perform parsing.
+2. Because global symbols are defined in file scope, they will lose the association information when they contain global
+   symbols.
 
 ## Todo
 
@@ -214,7 +229,6 @@ Currently, there are no known issues, but if any arise, please leave a comment i
     - [ ] Write built-in library
 
 - IDE
-    - [ ] Add auto-completion functionality
     - [ ] Add code formatting functionality
 
 ## Release Notes

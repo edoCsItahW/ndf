@@ -14,7 +14,7 @@
  * @desc
  * @copyright CC BY-NC-SA 2025. All rights reserved.
  * */
-import { ILocalePack, Language, Pending } from "../types";
+import { ILocalePack, Language } from "../types";
 
 
 export const locales: ILocalePack = {
@@ -42,6 +42,14 @@ export const locales: ILocalePack = {
         NSI5: {
             "zh-CN": "全局符号构建任务完成",
             "en-US": "Global symbol information to disk file"
+        },
+        NSI6: {
+            "zh-CN": "从'{0}'导入{1}",
+            "en-US": "Importing {1} from '{0}'"
+        },
+        NSI7: {
+            "zh-CN": "自动注入导入注释",
+            "en-US": "Auto injecting import comments"
         }
     },
     lexer: {

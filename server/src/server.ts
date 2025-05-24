@@ -32,7 +32,13 @@ import {
     TextDocumentChangeEvent,
     TextDocumentPositionParams,
     WorkspaceFolder,
-    CompletionItem
+    CompletionItem,
+    CompletionItemKind,
+    CodeActionParams,
+    CodeAction,
+    ExecuteCommandParams,
+    CodeActionKind,
+    WorkspaceEdit
 } from "vscode-languageserver";
 import {
     createConnection,
@@ -46,20 +52,20 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { cpus } from "node:os";
 import { createHash } from "node:crypto";
-import { Analyser, analyze, InternalNode, LeafNode, Parser, Program, Scope, Symbol, Visitor } from "./parser";
-import { Language, Level, LowercaseAlphabet, Nullable, SymbolInfo } from "./types";
+import { Analyser, analyze, parse, InternalNode, LeafNode, Parser, Program, Scope, Symbol, Visitor } from "./parser";
+import { CompletionKind, Language, Level, LowercaseAlphabet, Nullable, SymbolInfo } from "./types";
 import {
     Hover as HoverHelper,
     LOCALE,
     GlobalBuilder,
     TokenLegend,
     TokenModifier,
-    SemanticCollector
+    SemanticCollector, Completion
 } from "./IDEHelper";
 import { NDFError, NDFWarning } from "./expection";
-import { Lexer, Processor, Token } from "./lexer";
+import { Lexer, Processor, Token, TokenType } from "./lexer";
 import { methodDebug } from "./debug";
-import { RadixTree } from "./utils";
+import { enumToStr, RadixTree } from "./utils";
 import { readdirSync } from "fs";
 
 
@@ -155,11 +161,13 @@ class Server {
 
         // 功能
         this.connection.onHover(this.hover.bind(this));  // 悬停提示
-         this.connection.onCompletion(this.completion.bind(this));  // 代码完成
-        // this.connection.onCompletionResolve(this.completionResolve.bind(this))  // 代码完成解析
+        this.connection.onCompletion(this.completion.bind(this));  // 代码完成
+        this.connection.onCompletionResolve(this.completionResolve.bind(this));  // 代码完成解析
         // this.connection.onDocumentFormatting(this.formatting.bind(this))  // 格式化
         // this.connection.onSignatureHelp(this.signatureHelp.bind(this))  // 签名帮助
         this.connection.languages.semanticTokens.on(this.semanticTokens.bind(this));  // 语义令牌
+        this.connection.onCodeAction(this.codeAction.bind(this));  // 代码操作
+        this.connection.onExecuteCommand(this.executeCommand.bind(this));  // 执行命令
 
         // 事件监听
         // this.connection.onDidChangeWatchedFiles(this.watchedFilesChanged.bind(this))  // 文件监视器变更
@@ -201,15 +209,27 @@ class Server {
                 // 悬停提示: 支持
                 hoverProvider: true,
 
-                // 代码完成: 暂不支持
+                // 代码完成: 支持
                 completionProvider: {
-                    resolveProvider: false
+                    resolveProvider: true,
+                    triggerCharacters: ["/", ":", " "]
                 },
 
                 // 文档诊断: 支持
                 diagnosticProvider: {
                     interFileDependencies: false,  // 跨文件依赖
                     workspaceDiagnostics: false  // 工作区诊断
+                },
+
+                // 代码操作: 支持
+                codeActionProvider: {
+                    codeActionKinds: [CodeActionKind.QuickFix],
+                    resolveProvider: false
+                },
+
+                // 执行命令: 支持
+                executeCommandProvider: {
+                    commands: ["ndf.autoSpawnImport"]
                 },
 
                 // 格式化: 暂不支持
@@ -226,7 +246,7 @@ class Server {
                         tokenModifiers: []
                     },
                     full: {
-                        delta: false,  // 增量更新
+                        delta: false  // 增量更新
                     },
                     range: false  // 范围更新
                 },
@@ -414,7 +434,7 @@ class Server {
             return false;
         });
 
-        const hover = new HoverHelper(this.documentsCaches[params.textDocument.uri].scope!);
+        const hover = new HoverHelper(this.documentsCaches[params.textDocument.uri].scope!, false);
         const info = hover.handle(node);
 
         return {
@@ -422,6 +442,16 @@ class Server {
         };
     }
 
+    /**
+     * @method semanticTokens
+     * @summary 语义令牌。
+     * @desc 语义令牌处理器。
+     * @callback
+     * @param params 语义令牌参数。
+     * @returns 语义令牌结果。
+     * @see SemanticTokensParams
+     * @see onSemanticTokens
+     * */
     @methodDebug(serverDebug)
     private semanticTokens(params: SemanticTokensParams): SemanticTokensPartialResult {
         const collector = new SemanticCollector(this.documentsCaches[params.textDocument.uri].ast!, false);
@@ -431,8 +461,141 @@ class Server {
         };
     }
 
+    /**
+     * @method completion
+     * @summary 代码完成。
+     * @desc 代码完成处理器。
+     * @callback
+     * @param params 代码完成参数。
+     * @returns 代码完成结果。
+     * @see CompletionParams
+     * @see onCompletion
+     * */
+    @methodDebug(serverDebug)
     private completion(params: CompletionParams): CompletionItem[] {
-        return [];
+        const document = this.documents.get(params.textDocument.uri);
+        if (!document)
+            return [];
+
+        const docCache = this.documentsCaches[params.textDocument.uri];
+        if (!docCache || !docCache.scope || !docCache.ast)
+            return [];
+
+        const { line, character } = params.position;
+        const code = document.getText();
+
+        const completionHelper = new Completion(docCache.scope, docCache.tokens, true);
+        const result = completionHelper.provide(code, { line: line + 1, column: character + 1 });
+
+        return result.map(item => {
+            return {
+                label: item.label,
+                kind: this.transKind(item.kind),
+                detail: item.detail,
+                documentation: item.documentation,
+                sortText: item.sortText
+            };
+        });
+    }
+
+    /**
+     * @method completionResolve
+     * @summary 代码完成解析。
+     * @desc 代码完成解析处理器。
+     * @callback
+     * @param item 代码完成项。
+     * @returns 代码完成项。
+     * @see CompletionItem
+     * @see onCompletionResolve
+     * */
+    private completionResolve(item: CompletionItem): CompletionItem {
+        return item;
+    }
+
+    /**
+     * @method codeAction
+     * @summary 代码操作。
+     * @desc 代码操作处理器。
+     * @callback
+     * @param params 代码操作参数。
+     * @returns 代码操作结果。
+     * @see CodeActionParams
+     * @see onCodeAction
+     * */
+    private codeAction(params: CodeActionParams): CodeAction[] {
+//        console.log("codeAction, ", params);
+        const codeActions: CodeAction[] = [];
+
+        const current = Visitor.findToken(
+            this.documentsCaches[params.textDocument.uri].tokens,
+            { line: params.range.start.line + 1, column: params.range.start.character + 1 }
+        );
+
+        if (!current)
+            return codeActions;
+
+        const word = current.value.replace(/[^a-zA-Z0-9_\u4e00-\u9fa5]/g, "");
+
+        for (const [name, values] of this.documentsCaches[params.textDocument.uri].needImports)
+            if (values.includes(word)) {
+                this.connection.sendNotification("ndf/needImport", true);
+                codeActions.push({
+                    title: LOCALE.t("server", "NSI6", false, name, word),
+                    kind: CodeActionKind.QuickFix,
+                    command: {
+                        title: LOCALE.t("server", "NSI7", false),
+                        command: "ndf.autoSpawnImport",
+                        arguments: [name, word]
+                    }
+                });
+            }
+
+        return codeActions;
+    }
+
+    /**
+     * @method executeCommand
+     * @summary 执行命令。
+     * @desc 执行命令处理器。
+     * @callback
+     * @param params 执行命令参数。
+     * @returns 执行命令结果。
+     * @see ExecuteCommandParams
+     * @see onExecuteCommand
+     * */
+    private async executeCommand(params: ExecuteCommandParams) {
+//        console.log("executeCommand, ", params);
+        switch (params.command) {
+            case "ndf.autoSpawnImport":
+                const [file, word] = params.arguments!;
+
+                const pattern = new RegExp(`\/\/\/\s*from\s+(["'])${file}\x01\s+import\s+([^,]+(?:,\\s*[^,]+)*)`);
+
+                const match = this.documents.get(this.globalCaches.uri)!.getText().match(pattern);
+                if (match) {
+                    const [_, quote, _imports] = match;
+                    const imports = _imports.split(",").map(i => i.trim()).filter(k => k.length);
+
+                    if (imports.includes(word))
+                        return;
+
+                    const text = `/// from '${file}' import ${imports.join(", ")}, ${word}`;
+
+                    const edit: WorkspaceEdit = {
+                        changes: {
+                            [this.globalCaches.uri]: [{
+                                range: {
+                                    start: { line: match.index!, character: 0 },
+                                    end: { line: match.index! + 1, character: 0 }
+                                },
+                                newText: text
+                            }]
+                        }
+                    };
+
+                    await this.connection.workspace.applyEdit(edit);
+                }
+        }
     }
 
     /**
@@ -495,10 +658,10 @@ class Server {
      * */
     @methodDebug(serverDebug)
     private globalSymbolCB(name: string): Nullable<Symbol> {
-        if (this.globalCaches.backSteps.includes(name))  // 在逆推表中表示搜索失败
+        if (this.globalCaches.backSteps.includes(name))   // 在逆推表中表示搜索失败
             return;
 
-        if (this.globalCaches.symbols.searched.has(name))  // 已在搜索缓存中
+        if (this.globalCaches.symbols.searched.has(name))    // 已在搜索缓存中
             return this.globalCaches.symbols.searched.get(name)!;
 
         const prefix = name[0].toLowerCase() as LowercaseAlphabet;
@@ -507,12 +670,15 @@ class Server {
             const cacheFile = join(this.cacheDir, `${prefix}.json`);
 
             if (!this.globalCaches.symbols.global.has(prefix) && existsSync(cacheFile))
-                this.globalCaches.symbols.global.set(prefix, RadixTree.deserialize(readFileSync(join(this.cacheDir, `${prefix}.json`), "utf-8")));
+                this.globalCaches.symbols.global.set(
+                    prefix, RadixTree.deserialize(readFileSync(join(this.cacheDir, `${prefix}.json`), "utf-8"))
+                );
 
         }
 
         if (this.globalCaches.symbols.global.has(prefix)) {  // 全局缓存存在
             const result = this.globalCaches.symbols.global.get(prefix)!.search(name);
+            const needImports = this.documentsCaches[this.globalCaches.uri].needImports;
 
             if (result) {
                 const symbol = Symbol.fromJSON(result.info);
@@ -520,13 +686,11 @@ class Server {
                 this.globalCaches.symbols.searched.set(name, symbol);
 
                 // 记录需要导入的符号
-                if (
-                    this.documentsCaches[this.globalCaches.uri].needImports.has(result.file)
-                    && !this.documentsCaches[this.globalCaches.uri].needImports.get(result.file)!.includes(name)
-                )
-                    this.documentsCaches[this.globalCaches.uri].needImports.get(result.file)!.push(name);
+                if (needImports.has(result.file) && !needImports.get(result.file)!.includes(name))
+                    needImports.get(result.file)!.push(name);
+
                 else
-                    this.documentsCaches[this.globalCaches.uri].needImports.set(result.file, [name]);
+                    needImports.set(result.file, [name]);
 
                 return symbol;
             }
@@ -612,7 +776,13 @@ class Server {
             if (existsSync(absPath)) {
                 const code = readFileSync(absPath, "utf-8");
 
-                const { scope } = analyze(code);
+                const { ast } = parse(code);
+
+                const analyze = new Analyser(ast);
+                analyze.importSymbolCallback = this.importSymbolCB.bind(this);
+                analyze.globalSymbolCallback = this.globalSymbolCB.bind(this);
+
+                const scope = analyze.analyze();
 
                 names.forEach(name => {
                     const symbol = scope.resolve(name);
@@ -650,7 +820,7 @@ class Server {
     private async buildGlobalSymbols() {
         const folders = await this.connection.workspace.getWorkspaceFolders();
 
-        return this.withServerProgress(LOCALE.t("server", "NSI3", false), async ({update, id}) => {
+        return this.withServerProgress(LOCALE.t("server", "NSI3", false), async ({ update, id }) => {
 
             if (!folders)
                 return;
@@ -679,40 +849,53 @@ class Server {
                         this.globalCaches.symbols.global.clear();
                         this.globalCaches.backSteps = [];
 
-                        let needRebuild = false;
                         readdirSync(this.cacheDir).forEach(file => {
                             if (file.endsWith(".json") && basename(file).replace(extname(file), "").length === 32)
-                                needRebuild = true;
-                        })
+                                gb.sucessCB()
+                        });
 
-                        if (needRebuild)
-                            new Promise(gb.sucessCB.bind(gb)).then(
-                                () => this.parse(this.documents.get(this.globalCaches.uri)!.getText())
-                            )
-                        else
-                            // 重新进行分析
-                            this.parse(this.documents.get(this.globalCaches.uri)!.getText());
+                        this.parse(this.documents.get(this.globalCaches.uri)!.getText());
+
                     }));
-
-
                 }
             }
-
         });
-
-
     }
 
-    private async withServerProgress<T>(title: string, taskCB: (progress: { update: (percentage: number, message?: string) => Promise<void>; id: string }) => Promise<T>): Promise<T> {
-        const { type, data: id } = await this.connection.sendRequest<PrgNotify.StartResp>("progress/start", { type: "start", data: title });
+    /**
+     * @method withServerProgress
+     * @summary 服务器进度条。
+     * @desc 一个辅助方法，用于帮助{@link buildGlobalSymbols}创建服务器进度条。
+     * @typeParam T - 任务返回值。
+     * @param {string} title 进度条标题。
+     * @param {function} taskCB 任务回调。
+     * @returns {Promise<T>} 任务结果。
+     * @see buildGlobalSymbols
+     * */
+    private async withServerProgress<T>(
+        title: string,
+        taskCB: (progress: {
+            update: (percentage: number, message?: string) => Promise<void>;
+            id: string
+        }) => Promise<T>
+    ): Promise<T> {
+        const {
+            type,
+            data: id
+        } = await this.connection.sendRequest<PrgNotify.StartResp>("progress/start", { type: "start", data: title });
 
         this.globalCaches.progress.set(id, true);
 
         try {
-            const result = await taskCB({ id, update: async (percentage, msg) => {
-                if (this.globalCaches.progress.get(id))
-                    await this.connection.sendRequest("progress/update", { type: "update", data: { id, message: msg, percentage } });
-                }});
+            const result = await taskCB({
+                id, update: async (percentage, msg) => {
+                    if (this.globalCaches.progress.get(id))
+                        await this.connection.sendRequest("progress/update", {
+                            type: "update",
+                            data: { id, message: msg, percentage }
+                        });
+                }
+            });
 
             await this.connection.sendRequest("progress/end", { type: "end", data: id });
 
@@ -724,6 +907,30 @@ class Server {
             throw e;
         } finally {
             this.globalCaches.progress.delete(id);
+        }
+    }
+
+    /**
+     * @method transKind
+     * @summary 转换符号种类。
+     * @desc 一个辅助方法，在{@link completion}中用于将{@link CompletionKind}转换为{@link CompletionItemKind}。
+     * @param {CompletionKind} kind 符号种类。
+     * @returns {CompletionItemKind} 转换后的符号种类。
+     * @see CompletionKind
+     * @see CompletionItemKind
+     * */
+    private transKind(kind: CompletionKind): CompletionItemKind {
+        switch (kind) {
+            case CompletionKind.Variable:
+                return CompletionItemKind.Variable;
+            case CompletionKind.Template:
+                return CompletionItemKind.Class;
+            case CompletionKind.Keyword:
+                return CompletionKind.Keyword;
+            case CompletionKind.Field:
+                return CompletionItemKind.Field;
+            default:
+                return CompletionItemKind.Text;
         }
     }
 }

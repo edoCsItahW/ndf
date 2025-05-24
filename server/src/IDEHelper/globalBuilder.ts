@@ -34,8 +34,17 @@ let ext: string;
 let master: Master<MiddleData & { cacheDir: string }>;
 let cfg: GBConfig;
 let instance: GlobalBuilderIns;
+const VERSION = "2.4.5";
 
 
+/**
+ * @constructor GlobalBuilder
+ * @param prjRoot {string} 项目根目录
+ * @param cfg {GBConfig} 配置项
+ * @desc GlobalBuilder 构造函数
+ * @return {GlobalBuilderIns} 返回 GlobalBuilder 实例
+ * @remarks 单例模式
+ * */
 export const GlobalBuilder: GlobalBuilderConstructor = function(this: GlobalBuilderIns, prjRoot: string, cfg?: Partial<GBConfig>) {
     if (instance)
         return instance;
@@ -45,23 +54,31 @@ export const GlobalBuilder: GlobalBuilderConstructor = function(this: GlobalBuil
     return instance = this;
 } as unknown as GlobalBuilderConstructor;
 
-GlobalBuilder.init = function(this: GlobalBuilderIns, _prjRoot: string, _cfg?: Partial<GBConfig>) {
+
+/**
+ * @method init
+ * @desc 初始化 GlobalBuilder 实例
+ * @param _prjRoot {string} 项目根目录
+ * @param _cfg {GBConfig} 配置项
+ * @return {void}
+ * */
+GlobalBuilder.init = function(this: GlobalBuilderIns, _prjRoot: string, _cfg?: Partial<GBConfig>): void {
     prjRoot = _prjRoot;
     cfg = Object.assign(DEFAULT_GBCONFIG, _cfg);
     cacheDir = join(prjRoot, cfg.cacheDirName);
 
     if (existsSync(cacheDir)) {
-        if (!existsSync(join(cacheDir, "v2_2_4"))) {  // 旧版本缓存目录,删除
+        if (!existsSync(join(cacheDir, VERSION))) {  // 旧版本缓存目录,删除
             readdirSync(cacheDir).forEach(file => unlinkSync(join(cacheDir, file)));
             // 创建版本标识文件
-            writeFileSync(join(cacheDir, "v2_2_4"), "", "utf-8");
+            writeFileSync(join(cacheDir, VERSION), "", "utf-8");
         }
     }
 
     else {
         mkdirSync(cacheDir);
         // 创建版本标识文件
-        writeFileSync(join(cacheDir, "v2_2_4"), "", "utf-8");
+        writeFileSync(join(cacheDir, VERSION), "", "utf-8");
     }
 
     cacheHashFile = join(cacheDir, "hash.json");
@@ -78,7 +95,13 @@ GlobalBuilder.init = function(this: GlobalBuilderIns, _prjRoot: string, _cfg?: P
 };
 
 
-GlobalBuilder.prototype.build = async function(this: GlobalBuilderIns, cb?: Function) {
+/**
+ * @method build
+ * @desc 构建项目
+ * @param cb {Function} 构建完成回调函数
+ * @return {Promise<void>} 返回 Promise<void>
+ * */
+GlobalBuilder.prototype.build = async function(this: GlobalBuilderIns, cb?: Function): Promise<void> {
     const files = await glob(`**/*${ext}`, {
         cwd: prjRoot,
         absolute: true,
@@ -164,7 +187,12 @@ GlobalBuilder.prototype.sucessCB = function(this: GlobalBuilderIns) {
                     procssResult.get(prefix)!.insert(name, { info: data.symbols[name], file: data.filePath });
 
                 else {
-                    const tree = new RadixTree<SymbolInfo>();
+                    let tree = new RadixTree<SymbolInfo>();
+                    const treePath = join(cacheDir, `${prefix.toLowerCase()}.json`);
+
+                    if (existsSync(join(treePath)))
+                        tree = RadixTree.deserialize<SymbolInfo>(readFileSync(treePath, "utf-8"));
+
                     tree.insert(name, { info: data.symbols[name], file: data.filePath });
                     procssResult.set(prefix, tree);
                 }

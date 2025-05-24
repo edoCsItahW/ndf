@@ -188,9 +188,13 @@ export class Parser {
     @methodDebug(parseDebug, "parse statement")
     @traceback()
     private parseStatement(): Nullable<Statement> {
+        if (this.current)
+            this.current.state.stmtStart = true;
+
         try {
             switch (this.current?.type) {
                 case TokenType.KW_EXPORT:
+                    this.infer(TokenType.IDENTIFIER);
                     if (this.peek() && this.peek()!.type === TokenType.IDENTIFIER)
                         return this.parseAssignment(TokenType.KW_EXPORT);
 
@@ -201,6 +205,7 @@ export class Parser {
                             this.current!.pos, endPos(this.advance()!)
                         );
                 case TokenType.KW_PRIVATE:
+                    this.infer(TokenType.IDENTIFIER, TokenType.KW_TEMPLATE);
                     if (this.peek() && this.peek()!.type === TokenType.IDENTIFIER)
                         return this.parseAssignment(TokenType.KW_PRIVATE);
 
@@ -215,6 +220,7 @@ export class Parser {
                         );
 
                 case TokenType.KW_PUBLIC:
+                    this.infer(TokenType.IDENTIFIER);
                     if (this.peek() && this.peek()!.type === TokenType.IDENTIFIER)
                         return this.parseAssignment(TokenType.KW_PUBLIC);
 
@@ -226,19 +232,25 @@ export class Parser {
                         );
 
                 case TokenType.KW_TEMPLATE:
+                    this.infer(TokenType.IDENTIFIER);
                     return this.parseTemplateDef();
 
                 case TokenType.KW_UNNAMED:
+                    this.infer(TokenType.IDENTIFIER);
                     return this.parseUnnamedObj();
 
                 case TokenType.IDENTIFIER:
+                    this.infer(TokenType.KW_IS);
                     return this.parseAssignment();
 
                 case TokenType.COMMENT_LINE:
                 case TokenType.COMMENT_BLOCK:
+                    this.inferStart();
                     return this.parseComment();
 
                 case TokenType.EOF:
+                    this.inferStart();
+
                     return undefined;
 
                 default:
@@ -282,10 +294,18 @@ export class Parser {
     private parseAssignment(modifier?: Optional<TokenType>): Assignment {
         const assignment = new Assignment(this.current!.pos);
 
-        if (modifier && [TokenType.KW_EXPORT, TokenType.KW_PRIVATE, TokenType.KW_PUBLIC].includes(modifier))
+        if (modifier && [TokenType.KW_EXPORT, TokenType.KW_PRIVATE, TokenType.KW_PUBLIC].includes(modifier)) {
+            this.infer(TokenType.IDENTIFIER);
             assignment.modifier = INVERSE_KEYWORDS.get((assignment.marks.modifier = this.expect(modifier)).type)! as "export" | "private" | "public";
+        }
+
+
+        this.infer(TokenType.KW_IS);
 
         assignment.name = this.parseIdentifier(assignment);
+
+
+        this.inferExpression();
 
         assignment.marks.is = this.expect(TokenType.KW_IS);
 
@@ -308,20 +328,32 @@ export class Parser {
     private parseTemplateDef(modifier?: Optional<TokenType>): TemplateDef {
         const templateDef = new TemplateDef(this.current!.pos);
 
-        if (modifier)
+        if (modifier) {
+            this.infer(TokenType.KW_TEMPLATE);
             templateDef.modifier = (templateDef.marks.modifier = this.expect(modifier)).type === TokenType.KW_PRIVATE ? "private" : undefined;
+        }
+
+
+        this.infer(/* TokenType.IDENTIFIER */);  // 定义模板时不需要引用全剧符号
 
         templateDef.marks.template = this.expect(TokenType.KW_TEMPLATE);
+
+
+        this.infer(TokenType.LBRACKET);
 
         templateDef.name = this.parseIdentifier(templateDef);
 
         templateDef.pos1Comments = this.extractComments();
+
+
+        this.infer(TokenType.IDENTIFIER, TokenType.RBRACKET);
 
         this.expect(TokenType.LBRACKET);
 
         templateDef.separatorComments1.push(this.extractComments());
 
         while (this.inScope() && this.current?.type !== TokenType.RBRACKET) {  // 可留空参数
+
             const param = this.parseParameterDecl(templateDef);
 
             if (param)
@@ -333,23 +365,37 @@ export class Parser {
             if (this.current?.type === TokenType.RBRACKET)
                 break;
 
-            else
+            else {
+                this.infer(TokenType.IDENTIFIER);
                 this.expect(TokenType.COMMA);
+            }
 
             templateDef.separatorComments1.push(this.extractComments());
         }
+
+
+        this.infer(TokenType.KW_IS);
 
         this.expect(TokenType.RBRACKET);
 
         templateDef.pos2Comments = this.extractComments();
 
+
+        this.infer(TokenType.IDENTIFIER);
+
         templateDef.marks.is = this.expect(TokenType.KW_IS);
 
         templateDef.pos3Comments = this.extractComments();
 
+
+        this.infer(TokenType.LPAREN);
+
         templateDef.extend = this.parseIdentifier();
 
         templateDef.pos4Comments = this.extractComments();
+
+
+        this.infer(TokenType.IDENTIFIER, TokenType.RPAREN);
 
         this.expect(TokenType.LPAREN);
 
@@ -370,6 +416,9 @@ export class Parser {
             templateDef.separatorComments2.push(this.extractComments());
         }
 
+
+        this.inferStart();
+
         this.expect(TokenType.RPAREN);
 
         return templateDef;
@@ -388,11 +437,19 @@ export class Parser {
     private parseUnnamedObj(): UnnamedObj {
         const unnamedObj = new UnnamedObj(this.current!.pos);
 
+        this.infer(/* TokenType.IDENTIFIER */);  // 匿名对象不需要引用全剧符号
+
         unnamedObj.marks.unnamed = this.expect(TokenType.KW_UNNAMED);
+
+
+        this.infer(TokenType.LPAREN);
 
         unnamedObj.blueprint = this.parseIdentifier();
 
         unnamedObj.pos1Comments = this.extractComments();
+
+
+        this.infer(TokenType.KW_EXPORT, TokenType.KW_PUBLIC, TokenType.IDENTIFIER, TokenType.RPAREN);
 
         this.expect(TokenType.LPAREN);
 
@@ -412,6 +469,9 @@ export class Parser {
 
             unnamedObj.separatorComments.push(this.extractComments());
         }
+
+
+        this.inferStart();
 
         this.expect(TokenType.RPAREN);
 
@@ -435,7 +495,7 @@ export class Parser {
         if (this.current!.value.startsWith("///")) {
             const text = this.current!.value.slice(3);
 
-            const fileIptPattern = /^\s*from\s*(['"])(.*?)\1\s*import\s*([^,]+(?:,\s*[^,]+)*)/;
+            const fileIptPattern = /^\s*from\s+(['"])(.*?)\1\s+import\s+([^,]+(?:,\s*[^,]+)*)/;
             const libIptPattern = /^\s*import\s*([^,]+(?:,\s*[^,]+)*)/;
 
             if (fileIptPattern.test(text)) {
@@ -485,19 +545,31 @@ export class Parser {
     private parseParameterDecl(belong: TemplateDef): ParameterDecl {
         const parameterDecl = new ParameterDecl(this.current!.pos, belong);
 
+
+        this.infer(TokenType.COLON, TokenType.ASSIGN);
+
         parameterDecl.name = this.parseIdentifier(parameterDecl);
 
         if (this.inScope() && this.current?.type === TokenType.COLON) {
+
+            this.inferTypeRef();
+
             this.advance();
 
-            parameterDecl.annotation = this.parseTypeRef();
+            parameterDecl.annotation = this.parseTypeRef(TokenType.COMMA, TokenType.RBRACKET);
         }
 
         if (this.inScope() && this.current?.type === TokenType.ASSIGN) {
+
+            this.inferExpression();
+
             this.advance();
 
             parameterDecl.default = this.parseExpression();
         }
+
+
+        this.infer(TokenType.COMMA, TokenType.RBRACKET);
 
         parameterDecl.pos1Comments = this.extractComments();
 
@@ -520,7 +592,13 @@ export class Parser {
 
         const memberAssign = new MemberAssign(this.current!.pos, belong);
 
+
+        this.infer(TokenType.ASSIGN, TokenType.KW_IS);
+
         memberAssign.name = this.parseIdentifier(memberAssign);
+
+
+        this.inferExpression();
 
         memberAssign.operator = (memberAssign.marks.operator = this.expect([TokenType.ASSIGN, TokenType.KW_IS])).type === TokenType.KW_IS ? "is" : "=";
 
@@ -542,20 +620,23 @@ export class Parser {
      * */
     @methodDebug(parseDebug, "parse type ref")
     @traceback()
-    private parseTypeRef(): TypeRef {
+    private parseTypeRef(...infer: TokenType[]): TypeRef {
         switch (this.current!.type) {
             case TokenType.KW_INT:
             case TokenType.KW_FLOAT:
             case TokenType.KW_BOOL:
             case TokenType.KW_STRING: {
+                this.infer(...infer);
                 const builtinType = new BuiltinType(this.current!.pos);
                 builtinType.name = INVERSE_KEYWORDS.get(this.advance()!.type)!;
                 return builtinType;
             }
             case TokenType.KW_MAP: {
+                this.infer(TokenType.LT);
                 return this.parseGenericType();
             }
             case TokenType.IDENTIFIER:
+                this.infer(TokenType.LT);
                 if (this.peek() && this.peek()!.type === TokenType.LT)
                     return this.parseGenericType();
                 else
@@ -584,11 +665,14 @@ export class Parser {
 
         if (this.current!.type === TokenType.KW_MAP) {
             genericType.name = new Identifier(this.advance()!.pos);
-            genericType.name.name = "Map";
+            genericType.name.name = this.current!.value;
         } else
             genericType.name = this.parseIdentifier();
 
         genericType.pos1Comments = this.extractComments();
+
+
+        this.inferTypeRef(TokenType.GT);
 
         this.expect(TokenType.LT);
 
@@ -626,8 +710,10 @@ export class Parser {
      * */
     @methodDebug(parseDebug, "parse expression")
     @traceback(true)
-    private parseExpression(): Expression {
+    private parseExpression(...infer: TokenType[]): Expression {
         try {
+            infer.length ? this.infer(...infer) : this.inferOpBeforeExpr();
+
             return this.parseTernaryExpr();
         } catch (e) {
             this.syncExprLevel();
@@ -673,10 +759,13 @@ export class Parser {
     private parseLogicalOrExprWithTernary(): Expression {
         const condition = this.parseLogicalOrExpr();
 
-        this.skip();
+        const comments = this.extractComments();
 
-        if (this.current?.type === TokenType.QUESTION)
-            return this.parseFullTernary(condition);
+        if (this.current?.type === TokenType.QUESTION) {
+            this.inferExpression();
+
+            return this.parseFullTernary(condition, comments);
+        }
 
         return condition;
     }
@@ -686,25 +775,29 @@ export class Parser {
      * @summary 解析完整的三元表达式
      * @desc 由{@link parseLogicalOrExprWithTernary}调用，解析完整的三元表达式。
      * @param {Expression} condition 条件表达式。
+     * @param {Comment[]} pos1Comments 条件表达式的注释。
      * @returns {TernaryExpr} 解析结果，类型为`TernaryExpr`。
      * @private
      * @see TernaryExpr
      * */
     @methodDebug(parseDebug, "parse full ternary")
     @traceback()
-    private parseFullTernary(condition: Expression): TernaryExpr {
+    private parseFullTernary(condition: Expression, pos1Comments: Comment[]): TernaryExpr {
         const ternary = new TernaryExpr(this.current!.pos);
         ternary.condition = condition;
 
-        ternary.pos1Comments = this.extractComments();
+        ternary.pos1Comments = pos1Comments;
 
         this.expect(TokenType.QUESTION);
 
         ternary.pos2Comments = this.extractComments();
 
-        ternary.trueExpr = this.parseExpression(); // 允许嵌套表达式
+        ternary.trueExpr = this.parseExpression(TokenType.COLON); // 允许嵌套表达式
 
         ternary.pos3Comments = this.extractComments();
+
+
+        this.inferExpression();
 
         this.expect(TokenType.COLON);
 
@@ -726,12 +819,16 @@ export class Parser {
     @methodDebug(parseDebug, "parse logical or expr")
     @traceback()
     private parseLogicalOrExpr(): Expression {
+
         let expr: Expression = this.parseLogicalAndExpr();
 
         // this.skip();  // while将会处理,且上级表达式已skip,无需skip
 
         while (this.inScope() && this.current?.type === TokenType.BIN_OR) {
             const binaryExpr = new BinaryExpr(this.current!.pos);
+
+
+            this.inferExpression();
 
             this.advance();
 
@@ -767,6 +864,9 @@ export class Parser {
         while (this.inScope() && this.current?.type === TokenType.BIN_AND) {
             const binaryExpr = new BinaryExpr(this.current!.pos);
 
+
+            this.inferExpression();
+
             this.advance();
 
             binaryExpr.pos1Comments = this.extractComments();
@@ -800,6 +900,9 @@ export class Parser {
 
         while (this.inScope() && this.current?.type === TokenType.EQ || this.current?.type === TokenType.NE) {
             const binaryExpr = new BinaryExpr(this.current!.pos);
+
+
+            this.inferExpression();
 
             const operator = this.advance()?.type === TokenType.EQ ? "==" : "!=";
 
@@ -839,6 +942,9 @@ export class Parser {
             ) {
             const binaryExpr = new BinaryExpr(this.current.pos);
 
+
+            this.inferExpression();
+
             const operator = INVERSE_OPERATORS.get(this.advance()!.type)!;
 
             binaryExpr.pos1Comments = this.extractComments();
@@ -872,6 +978,9 @@ export class Parser {
 
         while (this.inScope() && this.current && [TokenType.ADD, TokenType.SUB].includes(this.current!.type)) {
             const binaryExpr = new BinaryExpr(this.current.pos);
+
+
+            this.inferExpression();
 
             const operator = this.advance()!.type === TokenType.ADD ? "+" : "-";
 
@@ -911,6 +1020,9 @@ export class Parser {
             ) {
             const binaryExpr = new BinaryExpr(this.current.pos);
 
+
+            this.inferExpression();
+
             const operator = INVERSE_OPERATORS.get(this.advance()!.type)!;
 
             binaryExpr.pos1Comments = this.extractComments();
@@ -943,9 +1055,12 @@ export class Parser {
         if (this.inScope() && this.current?.type === TokenType.SUB || this.current?.type === TokenType.NOT) {
             const unaryExpr = new UnaryExpr(this.current!.pos);
 
+
+            this.inferExpression();
+
             unaryExpr.operator = this.advance()!.type === TokenType.SUB ? "-" : "!";
 
-            unaryExpr.operand = this.parseUnaryExpr();
+            unaryExpr.operand = this.parsePostfixExpr();
 
             return unaryExpr;
         }
@@ -973,15 +1088,18 @@ export class Parser {
             [TokenType.LPAREN, TokenType.LBRACKET, TokenType.DIV],
             { firstStop: true, skipNewline: true }
         )) {
-            this.skip();
+            const comments = this.extractComments();
             switch (this.current!.type) {
                 case TokenType.LPAREN:
-                    expr = this.parseObjectCall(expr);
+                    this.infer(TokenType.IDENTIFIER, TokenType.RPAREN);
+                    expr = this.parseObjectCall(expr, comments);
                     break;
                 case TokenType.LBRACKET:
-                    expr = this.parseIndexAccess(expr);
+                    this.inferExpression();
+                    expr = this.parseIndexAccess(expr, comments);
                     break;
                 case TokenType.DIV:
+                    this.infer(TokenType.IDENTIFIER);
                     expr = this.parseMemberAccess(expr);
                     break;
                 default:
@@ -997,18 +1115,19 @@ export class Parser {
      * @summary 解析对象调用
      * @desc 由{@link parsePostfixExpr}调用，解析对象调用。
      * @param {Expression} expr 对象表达式。
+     * @param {Comment[]} pos1Comments 对象表达式的注释。
      * @returns {Expression} 解析结果，类型为`Expression`。
      * @private
      * @see Expression
      * */
     @methodDebug(parseDebug, "parse object call")
     @traceback()
-    private parseObjectCall(expr: Expression): Expression {
+    private parseObjectCall(expr: Expression, pos1Comments: Comment[]): Expression {
         const objectCall = new ObjectCall(this.current!.pos);
 
         objectCall.blueprint = expr as Identifier;
 
-        objectCall.pos1Comments = this.extractComments();
+        objectCall.pos1Comments = pos1Comments;
 
         this.expect(TokenType.LPAREN);
 
@@ -1029,6 +1148,9 @@ export class Parser {
             objectCall.separatorComments.push(this.extractComments());
         }
 
+
+        this.inferStartOrExpr();
+
         this.expect(TokenType.RPAREN);
 
         return objectCall;
@@ -1039,20 +1161,21 @@ export class Parser {
      * @summary 解析索引访问
      * @desc 由{@link parsePostfixExpr}调用，解析索引访问。
      * @param {Expression} expr 索引表达式。
+     * @param {Comment[]} pos1Comments 索引表达式的注释。
      * @returns {Expression} 解析结果，类型为`Expression`。
      * @private
      * @see Expression
      * */
     @methodDebug(parseDebug, "parse index access")
     @traceback()
-    private parseIndexAccess(expr: Expression): Expression {
+    private parseIndexAccess(expr: Expression, pos1Comments: Comment[]): Expression {
         const indexAccess = new IndexAccess(this.current!.pos);
 
         indexAccess.target = expr;
 
         this.expect(TokenType.LBRACKET);
 
-        indexAccess.pos1Comments = this.extractComments();
+        indexAccess.pos1Comments = pos1Comments;
 
         indexAccess.index = this.parseExpression();
 
@@ -1097,36 +1220,44 @@ export class Parser {
     @methodDebug(parseDebug, "parse primary expr")
     @traceback()
     private parsePrimaryExpr(): Expression {
-        this.skip();
+        const comments = this.extractComments();
+
         switch (this.current!.type) {
             case TokenType.REFERENCE:
                 return this.parseReference();
 
             case TokenType.LT:
+                this.infer(TokenType.IDENTIFIER, TokenType.GT);
                 return this.parseTemplateParam();
 
             case TokenType.KW_MAP:
+                this.infer(TokenType.LBRACKET);
                 return this.parseMapDef();
 
             case TokenType.LBRACKET:
+                this.inferExpression(TokenType.RBRACKET);
                 return this.parseVectorDef();
 
             case TokenType.LPAREN:
+                this.inferExpression(TokenType.RPAREN);
                 if (this.isPairStart())
                     return this.parsePair();
 
                 return this.parseParenthesisExpr();
 
             case TokenType.KW_PRIVATE:
+                this.infer(TokenType.IDENTIFIER);
                 return this.parsePropertyAssignExpr(TokenType.KW_PRIVATE);
 
             case TokenType.IDENTIFIER:
+                this.infer(TokenType.COLON, TokenType.LPAREN);
                 if (this.isGuidCallStart())
                     return this.parseGuidCall();
 
                 else if (this.peek()?.type === TokenType.LPAREN)
-                    return this.parseObjectCall(this.parseIdentifier());
+                    return this.parseObjectCall(this.parseIdentifier(), comments);
 
+                this.infer(TokenType.LBRACKET, TokenType.KW_IS);
                 const expr = this.tryParseTypeConstructor();
 
                 if (expr)
@@ -1182,6 +1313,9 @@ export class Parser {
 
         templateParam.pos1Comments = this.extractComments();
 
+
+        this.infer(TokenType.GT);
+
         templateParam.name = this.parseIdentifier();
 
         templateParam.pos2Comments = this.extractComments();
@@ -1208,6 +1342,9 @@ export class Parser {
 
         mapDef.pos1Comments = this.extractComments();
 
+
+        this.infer(TokenType.LPAREN, TokenType.RBRACKET)
+
         this.expect(TokenType.LBRACKET);
 
         mapDef.separatorComments.push(this.extractComments());
@@ -1224,11 +1361,17 @@ export class Parser {
             if (this.current?.type === TokenType.RBRACKET)
                 break;
 
-            else
+            else {
+                this.inferExpression();
+
                 this.expect(TokenType.COMMA);
+            }
 
             mapDef.separatorComments.push(this.extractComments());
         }
+
+
+        this.inferStartOrExpr();
 
         this.expect(TokenType.RBRACKET);
 
@@ -1274,21 +1417,30 @@ export class Parser {
     private parsePair(): Pair {
         const pair = new Pair(this.current!.pos);
 
+
+        this.inferExpression(TokenType.RPAREN);
+
         this.expect(TokenType.LPAREN);
 
         pair.pos1Comments = this.extractComments();
 
-        pair.key = this.parseExpression();
+        pair.key = this.parseExpression(TokenType.COMMA);
 
         pair.pos2Comments = this.extractComments();
+
+
+        this.inferExpression();
 
         this.expect(TokenType.COMMA);
 
         pair.pos3Comments = this.extractComments();
 
-        pair.value = this.parseExpression();
+        pair.value = this.parseExpression(TokenType.RPAREN);
 
         pair.pos4Comments = this.extractComments();
+
+
+        this.infer(TokenType.LPAREN, TokenType.COMMA, TokenType.RBRACKET);
 
         this.expect(TokenType.RPAREN);
 
@@ -1324,11 +1476,17 @@ export class Parser {
             if (this.current?.type === TokenType.RBRACKET)
                 break;
 
-            else
+            else {
+                this.inferExpression();
+
                 this.expect(TokenType.COMMA);
+            }
 
             vectorDef.separatorComments.push(this.extractComments());
         }
+
+
+        this.inferStartOrExpr();
 
         this.expect(TokenType.RBRACKET);
 
@@ -1343,7 +1501,14 @@ export class Parser {
      * */
     private tryParseTypeConstructor(): Nullable<Expression> {
         if (this.peek()?.type === TokenType.LBRACKET) {
+
+
+            this.infer(TokenType.LBRACKET);
+
             const typeName = this.parseIdentifier();
+
+
+            this.inferExpression(TokenType.RBRACKET);
 
             this.advance(); // 吃掉 LBRACKET
 
@@ -1381,11 +1546,17 @@ export class Parser {
             if (this.current?.type === TokenType.RBRACKET)
                 break;
 
-            else
+            else {
+                this.inferExpression();
+
                 this.expect(TokenType.COMMA);
+            }
 
             typeConstructor.separatorComments.push(this.extractComments());
         }
+
+
+        this.inferStartOrExpr();
 
         this.expect(TokenType.RBRACKET);
 
@@ -1406,10 +1577,15 @@ export class Parser {
     private parsePropertyAssignExpr(modifier?: Optional<TokenType>): Expression {
         const propertyAssignExpr = new PropertyAssignExpr(this.current!.pos);
 
-        if (modifier)
+        if (modifier) {
+            this.infer(TokenType.IDENTIFIER);
             propertyAssignExpr.modifier = this.expect(modifier).type === TokenType.KW_PRIVATE ? "private" : undefined;
+        }
 
         propertyAssignExpr.name = this.parseIdentifier();
+
+
+        this.inferExpression();
 
         this.expect(TokenType.KW_IS);
 
@@ -1435,7 +1611,7 @@ export class Parser {
 
         parenthesisExpr.pos1Comments = this.extractComments();
 
-        parenthesisExpr.expr = this.parseExpression();
+        parenthesisExpr.expr = this.parseExpression(TokenType.RPAREN);
 
         parenthesisExpr.pos2Comments = this.extractComments();
 
@@ -1472,6 +1648,9 @@ export class Parser {
         const guidCall = new GuidCall(this.current!.pos);
 
         this.advance();
+
+
+        this.infer(TokenType.LBRACE);
 
         this.expect(TokenType.COLON);
 
@@ -1550,12 +1729,20 @@ export class Parser {
         let haveOne: boolean = false;  // 至少进行类型注解或赋值其中一项
         const argument = new Argument(this.current!.pos, belong);
 
-        if (this.inScope() && [TokenType.KW_PUBLIC, TokenType.KW_EXPORT].includes(this.current!.type))
+        if (this.inScope() && [TokenType.KW_PUBLIC, TokenType.KW_EXPORT].includes(this.current!.type)) {
+            this.infer(TokenType.IDENTIFIER);
             argument.modifier = (argument.marks.modifier = this.advance()!).type === TokenType.KW_EXPORT ? "export" : "public";
+        }
+
+
+        this.infer(TokenType.COLON, TokenType.ASSIGN, TokenType.KW_IS);
 
         argument.name = this.parseIdentifier(argument);
 
         if (this.inScope() && this.current?.type === TokenType.COLON) {
+
+            this.inferTypeRef();
+
             this.advance();
 
             argument.annotation = this.parseTypeRef();
@@ -1563,6 +1750,9 @@ export class Parser {
         }
 
         if (this.inScope() && this.current && [TokenType.ASSIGN, TokenType.KW_IS].includes(this.current.type)) {
+
+            this.inferExpression();
+
             argument.operator = (argument.marks.operator = this.current)?.type === TokenType.ASSIGN ? "=" : "is";
 
             this.advance();
@@ -1596,6 +1786,8 @@ export class Parser {
     @methodDebug(parseDebug, "parse literal")
     @traceback()
     private parseLiteral(): Literal {
+        this.inferStartOrExpr();
+
         switch (this.current!.type) {
             case TokenType.INT:
                 return new Integer(this.current!.pos, this.advance()!.value);
@@ -1630,7 +1822,18 @@ export class Parser {
      * @private
      * */
     private inScope(): boolean {
-        return this.idx < this.tokens.length && this.current?.type !== TokenType.EOF;
+        const result = this.idx < this.tokens.length && this.current?.type !== TokenType.EOF;
+        if (!result && this.tokens[this.tokens.length - 1])
+            this.tokens[this.tokens.length - 1].state.inferNext = [
+                TokenType.IDENTIFIER,
+                TokenType.KW_EXPORT,
+                TokenType.KW_PRIVATE,
+                TokenType.KW_PUBLIC,
+                TokenType.KW_TEMPLATE,
+                TokenType.KW_UNNAMED
+            ];
+
+        return result;
     }
 
     /**
@@ -1700,7 +1903,7 @@ export class Parser {
         throw new _SyntaxError(
             this.localet?.("NE2P10", expect, enumToStr(TokenType, this.current?.type || TokenType.ERROR))
             || `\`${expect}\` expected, but found \`${enumToStr(TokenType, this.current?.type || TokenType.ERROR)}\``,
-            this.current?.pos || { line: 0, column: 0 }, endPos(this.advance()!)
+            this.current?.pos || { line: 0, column: 0 }, endPos(this.peek() ? this.advance()! : this.current!)
         );
     }
 
@@ -1750,7 +1953,7 @@ export class Parser {
     /**
      * @method extractComments
      * @summary 提取注释
-     * @desc 提取从当前位置到下一个令牌之间的注释，并返回注释列表。
+     * @desc 提取从当前位置到下一个令牌之间的注释，并返回注释列表，且自动跳过空白符号。
      * @returns {Comment[]} 注释列表。
      * @private
      * */
@@ -1823,5 +2026,96 @@ export class Parser {
      * */
     private reportError(msg: string, start: IPos, end: IPos) {
         this._errors.push(new ParseError(msg, start, end));
+    }
+
+    private infer(...types: TokenType[]) {
+        if (this.current)
+            this.current.state.inferNext = types;
+
+        let idx: number = this.idx + 1;
+        while (
+            idx < this.tokens.length &&
+            (  // 如果是注释或空白符，则复制推断
+                this.tokens[idx].category === TokenCategory.COMMENT
+                || this.tokens[idx].category === TokenCategory.WHITESPACE
+            )
+        ) {
+            this.tokens[idx].state.inferNext = types;
+            idx++;
+        }
+    }
+
+    private inferTypeRef(...types: TokenType[]) {
+        this.infer(
+            TokenType.KW_INT,
+            TokenType.KW_FLOAT,
+            TokenType.KW_BOOL,
+            TokenType.KW_STRING,
+            TokenType.KW_MAP,
+            TokenType.IDENTIFIER,
+            ...types
+        )
+    }
+
+    private inferExpression(...types: TokenType[]) {
+        this.infer(
+            TokenType.SUB,
+            TokenType.NOT,
+            TokenType.KW_NIL,
+            TokenType.KW_TRUE,
+            TokenType.KW_FALSE,
+            TokenType.DOLLAR,
+            TokenType.IDENTIFIER,
+            TokenType.LBRACE,
+            TokenType.LT,
+            TokenType.KW_MAP,
+            TokenType.LBRACKET,
+            TokenType.KW_PRIVATE,
+            ...types
+        );
+    }
+
+    private inferOpBeforeExpr(...types: TokenType[]) {
+        this.infer(
+            TokenType.QUESTION,
+            TokenType.BIN_OR,
+            TokenType.BIN_AND,
+            TokenType.EQ,
+            TokenType.NE,
+            TokenType.LT,
+            TokenType.GT,
+            TokenType.LE,
+            TokenType.GE,
+            TokenType.ADD,
+            TokenType.SUB,
+            TokenType.MUL,
+            TokenType.KW_DIV,
+            TokenType.MOD,
+            ...types
+        )
+    }
+
+    private inferStart(...types: TokenType[]) {
+        this.infer(
+            TokenType.IDENTIFIER,
+            TokenType.KW_EXPORT,
+            TokenType.KW_PRIVATE,
+            TokenType.KW_PUBLIC,
+            TokenType.KW_TEMPLATE,
+            TokenType.KW_UNNAMED,
+            ...types
+        );
+    }
+
+    private inferStartOrExpr(...types: TokenType[]) {
+        this.inferExpression(
+            TokenType.IDENTIFIER,
+            TokenType.KW_EXPORT,
+            TokenType.KW_PRIVATE,
+            TokenType.KW_PUBLIC,
+            TokenType.KW_TEMPLATE,
+            TokenType.KW_UNNAMED,
+            ...types
+        );
     }
 }

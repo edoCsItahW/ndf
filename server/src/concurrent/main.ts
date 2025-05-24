@@ -318,6 +318,7 @@ export class ThreadWorker {
                         }
                     }
 
+                    // TODO: 需要更改,这里队列中传入了任务，结果又单独拿这个任务进行了处理，造成了重复，使用next()
                     this.process(data.data);
 
                     break;

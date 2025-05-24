@@ -102,20 +102,68 @@ export interface IAnalyser {
 }
 
 
-export interface ITypeJSON { type: BaseType, name?: string }
+export interface ITypeJSON {
+    typeName: string;
+    type: BaseType;
+    name?: string;
+}
 
-export interface ITemplateTypeJSON { name: string, type: BaseType, params: Record<string, ITypeJSON>, prototypeScope?: IScopeJSON }
+export interface ITemplateTypeJSON {
+    typeName: string;
+    name: string;
+    type: BaseType;
+    params: Record<string, ITypeJSON>;
+    prototypeScope?: IScopeJSON;
+}
 
-export interface IObjectTypeJSON { name: string, type: BaseType, prototypeScope?: IScopeJSON }
+export interface IObjectTypeJSON {
+    typeName: string;
+    name: string;
+    type: BaseType;
+    prototypeScope?: IScopeJSON;
+}
 
-export interface IGenericTypeJSON { name: string, type: BaseType, params: ITypeJSON[] }
+export interface IGenericTypeJSON {
+    typeName: string;
+    name: string;
+    type: BaseType;
+    params: ITypeJSON[];
+}
 
-export interface IVectorTypeJSON { name?: string, type: BaseType, elementType?: ITypeJSON[] }
+export interface IVectorTypeJSON {
+    typeName: string;
+    name?: string;
+    type: BaseType;
+    elementType?: ITypeJSON[];
+}
 
-export interface IMapTypeJSON { name?: string, type: BaseType, keyType?: ITypeJSON[], valueType?: ITypeJSON[] }
+export interface IMapTypeJSON {
+    typeName: string;
+    name?: string;
+    type: BaseType;
+    keyType?: ITypeJSON[];
+    valueType?: ITypeJSON[];
+}
 
-export interface IPairTypeJSON { name?: string, type: BaseType, keyType?: ITypeJSON, valueType?: ITypeJSON }
+export interface IPairTypeJSON {
+    typeName: string;
+    name?: string;
+    type: BaseType;
+    keyType?: ITypeJSON;
+    valueType?: ITypeJSON;
+}
 
-export interface ISymbolJSON { name: string, pos: IPos, type: ITypeJSON}
+export type TypeJSON = ITypeJSON | ITemplateTypeJSON | IObjectTypeJSON | IGenericTypeJSON | IVectorTypeJSON | IMapTypeJSON | IPairTypeJSON;
 
-export interface IScopeJSON { kind: string, id: number, symbols: Record<string, ISymbolJSON>, parent?: number | IScopeJSON }
+export interface ISymbolJSON {
+    name: string;
+    pos: IPos;
+    type: ITypeJSON;
+}
+
+export interface IScopeJSON {
+    kind: string;
+    id: number;
+    symbols: Record<string, ISymbolJSON>;
+    parent?: number | IScopeJSON;
+}

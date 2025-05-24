@@ -8,7 +8,7 @@ Assignment: ('private' | 'export' | 'public')? Identifier 'is' Expression;
 
 TemplateDef: ('private')? 'template' Identifier (Newline | Comment)* ParameterBlock (Newline | Comment)* 'is' Newline* Identifier (Newline | Comment)* MemberBlock;
 
-UnnameObj: 'unnamed' Identifier (Newline | Comment)* ArgumentBlock;
+UnnameObj: 'unnamed' Identifier ObjectCall;
 
 ParameterBlock: '[' ParameterDecl (',' ParameterDecl)* | Empty ']';
 
@@ -49,11 +49,11 @@ MultiplicativeExpr:
     /* UnaryExpr | BinaryExpr */
 	UnaryExpr ((Newline | Comment)* ('*' | 'div' | '%') (Newline | Comment)* UnaryExpr)*;
 
-UnaryExpr: ('-' | '!') (UnaryExpr | PostfixExpr);
+UnaryExpr: ('-' | '!')? PostfixExpr;
 
 PostfixExpr: PrimaryExpr (ObjectCall | IndexAccess | MemberAccess)*;
 
-ObjectCall: Identifier (Newline | Comment)* ArgumentBlock;
+ObjectCall: '(' (Newline | Comment)* Argument* (Newline | Comment)* ')';
 
 IndexAccess: '[' (Newline | Comment)* Expression (Newline | Comment)* ']';
 
@@ -107,8 +107,6 @@ String: '"' (~["] | '""')* '"';
 Nil: 'nil';
 
 Empty: ;
-
-ArgumentBlock: '(' (Newline | Comment)* Argument* (Newline | Comment)* ')';
 
 Argument: ('exprot' | 'public')? Identifier (Annotation | ('=' | 'is') Expression);
 

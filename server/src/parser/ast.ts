@@ -76,6 +76,7 @@ import {
     IPropertyAssignMark,
     IArgumentMMark, IMapDefMark
 } from "../types";
+import { Token } from "../lexer";
 
 
 export type ASTWithBelong = Argument | UnnamedObj | TemplateDef | MemberAssign | ParameterDecl | Assignment;
@@ -329,7 +330,8 @@ export class Assignment extends InternalStatement implements IAssignment {
             nodeName: this._nodeName,
             modifier: this.modifier,
             name: this.name.toJSON(),
-            value: this.value.toJSON()
+            value: this.value.toJSON(),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -408,7 +410,8 @@ export class TemplateDef extends InternalStatement implements ITemplateDef {
             ),
             separatorComments2: this.separatorComments2.map(
                 comments => comments.map(comment => comment.toJSON())
-            )
+            ),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -445,7 +448,8 @@ export class UnnamedObj extends InternalStatement implements IUnnamedObj {
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
             separatorComments: this.separatorComments.map(
                 comments => comments.map(comment => comment.toJSON())
-            )
+            ),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -478,7 +482,8 @@ export class FileImportComment extends LeafComment implements IFileImportComment
         return {
             nodeName: this._nodeName,
             items: this.items,
-            path: this.path
+            path: this.path,
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -504,7 +509,8 @@ export class LibImportComment extends LeafComment implements ILibImportComment {
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            items: this.items
+            items: this.items,
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -527,7 +533,8 @@ export class CommenComment extends LeafComment implements ICommonComment {
         return {
             nodeName: this._nodeName,
             category: this.category,
-            value: this.value
+            value: this.value,
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -561,6 +568,7 @@ export class ParameterDecl extends InternalNode implements IParameterDecl {
             annotation: this.annotation?.toJSON(),
             default: this.default?.toJSON(),
             pos1Comments: this.pos1Comments.map((comment) => comment.toJSON()),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -595,6 +603,7 @@ export class MemberAssign extends InternalNode implements IMemberAssign {
             operator: this.operator,
             value: this.value.toJSON(),
             pos1Comments: this.pos1Comments.map((comment) => comment.toJSON()),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -633,7 +642,8 @@ export class BuiltinType extends LeafTypeRef implements IBuiltinType {
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            name: this.name
+            name: this.name,
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -668,7 +678,8 @@ export class GenericType extends InternalTypeRef implements IGenericType {
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
             separatorComments: this.separatorComments.map(
                 comments => comments.map(comment => comment.toJSON())
-            )
+            ),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -707,7 +718,8 @@ export class Identifier extends LeafExpression implements IIdentifier {
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            name: this.name
+            name: this.name,
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -735,7 +747,8 @@ export class UnaryExpr extends InternalExpression implements IUnaryExpr {
         return {
             nodeName: this._nodeName,
             operator: this.operator,
-            operand: this.operand.toJSON()
+            operand: this.operand.toJSON(),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -770,7 +783,8 @@ export class BinaryExpr extends InternalExpression implements IBinaryExpr {
             operator: this.operator,
             right: this.right.toJSON(),
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
-            pos2Comments: this.pos2Comments.map(comment => comment.toJSON())
+            pos2Comments: this.pos2Comments.map(comment => comment.toJSON()),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -809,7 +823,8 @@ export class TernaryExpr extends InternalExpression implements ITernaryExpr {
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
             pos2Comments: this.pos2Comments.map(comment => comment.toJSON()),
             pos3Comments: this.pos3Comments.map(comment => comment.toJSON()),
-            pos4Comments: this.pos4Comments.map(comment => comment.toJSON())
+            pos4Comments: this.pos4Comments.map(comment => comment.toJSON()),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -840,7 +855,8 @@ export class TemplateParam extends InternalExpression implements ITemplateParam 
             nodeName: this._nodeName,
             name: this.name.toJSON(),
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
-            pos2Comments: this.pos2Comments.map(comment => comment.toJSON())
+            pos2Comments: this.pos2Comments.map(comment => comment.toJSON()),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -875,7 +891,8 @@ export class ObjectCall extends InternalExpression implements IObjectCall {
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
             separatorComments: this.separatorComments.map(
                 comments => comments.map(comment => comment.toJSON())
-            )
+            ),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -908,7 +925,8 @@ export class IndexAccess extends InternalExpression implements IIndexAccess {
             index: this.index.toJSON(),
             target: this.target.toJSON(),
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
-            pos2Comments: this.pos2Comments.map(comment => comment.toJSON())
+            pos2Comments: this.pos2Comments.map(comment => comment.toJSON()),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -936,7 +954,8 @@ export class MemberAccess extends InternalExpression implements IMemberAccess {
         return {
             nodeName: this._nodeName,
             target: this.target.toJSON(),
-            property: this.property.toJSON()
+            property: this.property.toJSON(),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -967,7 +986,8 @@ export class ParenthesisExpr extends InternalExpression implements IParenthesisE
             nodeName: this._nodeName,
             expr: this.expr.toJSON(),
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
-            pos2Comments: this.pos2Comments.map(comment => comment.toJSON())
+            pos2Comments: this.pos2Comments.map(comment => comment.toJSON()),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -993,7 +1013,8 @@ export class Reference extends LeafExpression implements IReference {
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            path: this.path
+            path: this.path,
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1024,7 +1045,8 @@ export class GuidCall extends LeafExpression implements IGuidCall {
             nodeName: this._nodeName,
             uuid: this.uuid,
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
-            pos2Comments: this.pos2Comments.map(comment => comment.toJSON())
+            pos2Comments: this.pos2Comments.map(comment => comment.toJSON()),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1058,7 +1080,8 @@ export class MapDef extends InternalExpression implements IMapDef {
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
             separatorComments: this.separatorComments.map(
                 comments => comments.map(comment => comment.toJSON())
-            )
+            ),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1095,7 +1118,8 @@ export class Pair extends InternalExpression implements IPair {
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
             pos2Comments: this.pos2Comments.map(comment => comment.toJSON()),
             pos3Comments: this.pos3Comments.map(comment => comment.toJSON()),
-            pos4Comments: this.pos4Comments.map(comment => comment.toJSON())
+            pos4Comments: this.pos4Comments.map(comment => comment.toJSON()),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1126,7 +1150,8 @@ export class VectorDef extends InternalExpression implements IVectorDef {
             elements: this.elements.map(p => p.toJSON()),
             separatorComments: this.separatorComments.map(
                 comments => comments.map(comment => comment.toJSON())
-            )
+            ),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1161,7 +1186,8 @@ export class TypeConstructor extends InternalExpression implements ITypeConstruc
             pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
             separatorComments: this.separatorComments.map(
                 comments => comments.map(comment => comment.toJSON())
-            )
+            ),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1192,7 +1218,8 @@ export class PropertyAssignExpr extends InternalExpression implements IPropertyA
             nodeName: this._nodeName,
             modifier: this.modifier,
             name: this.name.toJSON(),
-            value: this.value.toJSON()
+            value: this.value.toJSON(),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1230,7 +1257,8 @@ export class Argument extends InternalNode implements IArgument {
             annotation: this.annotation?.toJSON(),
             value: this.value?.toJSON(),
             operator: this.operator,
-            pos1Comments: this.pos1Comments.map(comment => comment.toJSON())
+            pos1Comments: this.pos1Comments.map(comment => comment.toJSON()),
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1256,7 +1284,8 @@ export class Integer extends Literal implements IInteger {
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            value: this.value
+            value: this.value,
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1277,7 +1306,8 @@ export class Float extends Literal implements IFloat {
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            value: this.value
+            value: this.value,
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1298,7 +1328,8 @@ export class Bool extends Literal implements IBoolean {
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            value: this.value
+            value: this.value,
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1319,7 +1350,8 @@ export class Str extends Literal implements IString {
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            value: this.value
+            value: this.value,
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1341,7 +1373,8 @@ export class Nil extends Literal implements INil {
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            value: this.value
+            value: this.value,
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1365,7 +1398,7 @@ export class ErrorExpr extends LeafExpression {
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            type: this.type
+            type: this.type.toJSON?.(true) || this.type
         };
     }
 
@@ -1390,6 +1423,12 @@ export class Visitor {
             if (visitor(node)) return;
             node.children.forEach(n => this.visit(n, visitor));
         }
+    }
+
+    static findToken(tokens: Token[], pos: IPos): Nullable<Token> {
+        return tokens.find(t =>
+            t.pos.line === pos.line && t.pos.column <= pos.column && t.pos.column + t.value.length >= pos.column
+        );
     }
 }
 

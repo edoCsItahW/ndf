@@ -14,9 +14,9 @@
  * @desc
  * @copyright CC BY-NC-SA 2025. All rights reserved.
  * */
-import { IPos, Nullable, IRadixNode } from "./types";
-import serializeJavascript = require("serialize-javascript");
+import { IPos, IRadixNode, Nullable } from "./types";
 import { Mutex } from "async-mutex";
+import serializeJavascript = require("serialize-javascript");
 
 
 /**

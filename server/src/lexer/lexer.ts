@@ -106,7 +106,7 @@ export class Lexer {
 
         else if (this.current === '\n') {
             this.pos.newline();
-            return new Token(TokenType.NEWLINE, start, '\\n');
+            return new Token(TokenType.NEWLINE, start, '\\n', TokenCategory.WHITESPACE);
         }
 
         else if (isLetter(this.current))

@@ -6,9 +6,6 @@
 // permission, please contact the author: 2207150234@st.sziit.edu.cn
 //
 
-import { ISymbolJSON } from "./analysis";
-import { Nullable } from "./other";
-
 
 /**
  * @file IDE.ts
@@ -18,6 +15,9 @@ import { Nullable } from "./other";
  * @desc
  * @copyright CC BY-NC-SA 2025. All rights reserved.
  * */
+import { ISymbolJSON } from "./analysis";
+import { Nullable } from "./other";
+import { Symbol } from "../parser";
 
 
 export type Language = "en-US" | "zh-CN";
@@ -186,3 +186,27 @@ type _alphabet<T extends string, Acc extends string = ""> =
 export type LowercaseAlphabet = Exclude<_alphabet<"abcdefghijklmnopqrstuvwxyz">, "">;
 export type UppercaseAlphabet = Uppercase<LowercaseAlphabet>;
 export type Letter = LowercaseAlphabet | UppercaseAlphabet;
+
+
+export enum CompletionKind {
+    Variable,
+    Template,
+    Keyword,
+    Field,
+    Operator
+}
+
+export interface CompletionItem {
+    label: string;
+    kind: CompletionKind;
+    detail: string;
+    documentation?: string;
+    sortText?: string;
+}
+
+export interface CompletionContext {
+    isNewStmt: boolean,
+    isGlobalCompletion: boolean;
+    isMemberCompletion: boolean;
+    parentObject: Nullable<Symbol>;
+}

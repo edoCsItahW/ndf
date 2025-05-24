@@ -71,7 +71,7 @@ import {
     IMapTypeJSON,
     IPairTypeJSON,
     ISymbolJSON,
-    IScopeJSON
+    IScopeJSON, TypeJSON
 } from "../types";
 import { _TypeError, DefineError, ImportError, NameWarning, NDFError, ReferenceWarning } from "../expection";
 import { methodDebug, traceback } from "../debug";
@@ -183,9 +183,7 @@ export class Type implements IType {
             && gen1Type.name === gen2Type.name
             && gen1Type.params.length === gen2Type.params.length) {
             return gen1Type.params.some(type => gen2Type.params.some(t => Type.isCompatible(type, t)));
-        }
-
-        else if (gen1Type instanceof VectorType && gen2Type instanceof VectorType)
+        } else if (gen1Type instanceof VectorType && gen2Type instanceof VectorType)
             return gen1Type.elementType!.some(type => gen2Type.elementType!.some(t => Type.isCompatible(type, t)));
 
         else if (gen1Type instanceof MapType && gen2Type instanceof MapType)
@@ -245,6 +243,7 @@ export class Type implements IType {
 
     toJSON(safe: boolean = false): ITypeJSON {
         return {
+            typeName: this.constructor.name,
             type: this.type,
             name: this.name
         };
@@ -254,8 +253,25 @@ export class Type implements IType {
         return new Type(type.type, type.name);
     }
 
-    static fromJSON(obj: ITypeJSON): Type {
-        return new Type(obj.type, obj.name);
+    static fromJSON(obj: TypeJSON): Type {
+        switch (obj.typeName) {
+            case "Type":
+                return new Type(obj.type, obj.name);
+            case "TemplateType":
+                return TemplateType.fromJSON(obj as ITemplateTypeJSON);
+            case "ObjectType":
+                return ObjectType.fromJSON(obj as IObjectTypeJSON);
+            case "GenericType":
+                return _GenericType.fromJSON(obj as IGenericTypeJSON);
+            case "VectorType":
+                return VectorType.fromJSON(obj as IVectorTypeJSON);
+            case "MapType":
+                return MapType.fromJSON(obj as IMapTypeJSON);
+            case "PairType":
+                return PairType.fromJSON(obj as IPairTypeJSON);
+            default:
+                return new Type(BaseType.UNKNOWN);
+        }
     }
 }
 
@@ -274,6 +290,7 @@ export class TemplateType extends Type {
 
     toJSON(safe: boolean = false): ITemplateTypeJSON {
         return {
+            typeName: this.constructor.name,
             name: this.name!,
             type: this.type,
             params: Object.entries(Object.fromEntries(this.params)).reduce((acc, [key, value]) => {
@@ -313,6 +330,7 @@ export class ObjectType extends Type {
 
     toJSON(safe: boolean = false): IObjectTypeJSON {
         return {
+            typeName: this.constructor.name,
             name: this.name!,
             type: this.type,
             prototypeScope: this.prototypeScope?.toJSON(safe)
@@ -339,6 +357,7 @@ export class _GenericType extends Type {
 
     toJSON(safe: boolean = false): IGenericTypeJSON {
         return {
+            typeName: this.constructor.name,
             name: this.name!,
             type: this.type,
             params: this.params.map(p => p.toJSON(safe))
@@ -364,6 +383,7 @@ export class VectorType extends Type {
 
     toJSON(safe: boolean = false): IVectorTypeJSON {
         return {
+            typeName: this.constructor.name,
             name: this.name,
             type: this.type,
             elementType: this.elementType?.map(t => t.toJSON(safe))
@@ -391,6 +411,7 @@ export class MapType extends Type {
 
     toJSON(safe: boolean = false): IMapTypeJSON {
         return {
+            typeName: this.constructor.name,
             name: this.name,
             type: this.type,
             keyType: this.keyType?.map(t => t.toJSON(safe)),
@@ -422,6 +443,7 @@ export class PairType extends Type {
 
     toJSON(safe: boolean = false): IPairTypeJSON {
         return {
+            typeName: this.constructor.name,
             name: this.name,
             type: this.type,
             keyType: this.keyType?.toJSON(safe),
@@ -488,7 +510,7 @@ let id: number = 0;
 
 
 export class Scope {
-    private symbols: Map<string, Symbol> = new Map();
+    private _symbols: Map<string, Symbol> = new Map();
     parent: Nullable<Scope>;
     children: Scope[] = [];
     start: Nullable<IPos>;
@@ -507,12 +529,16 @@ export class Scope {
         this.id = id++;
     }
 
+    get symbols(): Map<string, Symbol> {
+        return this._symbols;
+    }
+
     define(symbol: Symbol) {
-        this.symbols.set(symbol.name, symbol);
+        this._symbols.set(symbol.name, symbol);
     }
 
     resolve(name: string): Nullable<Symbol> {
-        return this.symbols.get(name);
+        return this._symbols.get(name);
     }
 
     lookup(name: string, stop?: ScopeKind): Nullable<Symbol>;
@@ -537,7 +563,7 @@ export class Scope {
         return {
             kind: this.kind,
             id: this.id,
-            symbols: Object.entries(Object.fromEntries(this.symbols)).reduce((acc, [key, value]) => {
+            symbols: Object.entries(Object.fromEntries(this._symbols)).reduce((acc, [key, value]) => {
                 acc[key] = value.toJSON(safe);
                 return acc;
             }, {} as Record<string, ISymbolJSON>),
@@ -860,7 +886,7 @@ export class Analyser implements IAnalyser {
             ? this.visitTypeRef(node.annotation)
             : node.default
                 ? this.visitExpression(node.default)
-                : { type: BaseType.ANY });
+                : new Type(BaseType.ANY));
 
         if (parentType && parentType.params.has(node.name.value))
             if (!Type.isCompatible(type, parentType.params.get(node.name.value)!)) {
@@ -982,9 +1008,7 @@ export class Analyser implements IAnalyser {
 
             node.type = vectorType;
             return vectorType;
-        }
-
-        else if (node.name.value.toLowerCase() === "map") {
+        } else if (node.name.value.toLowerCase() === "map") {
             const mapType = new MapType(BaseType.MAP, "Map");
 
             mapType.keyType = this.unrepeatedType(node.typeParams.map(param => this.visitTypeRef(param)));
@@ -992,9 +1016,7 @@ export class Analyser implements IAnalyser {
 
             node.type = mapType;
             return mapType;
-        }
-
-        else {
+        } else {
             const genericType = new _GenericType(BaseType.GENERIC, node.name.value);
 
             genericType.params = this.unrepeatedType(node.typeParams.map(param => this.visitTypeRef(param)));
@@ -1118,7 +1140,7 @@ export class Analyser implements IAnalyser {
                 node.name.pos, endPos(node)
             ));
 
-        node.name.type = { type: BaseType.UNKNOWN };
+        node.name.type = new Type(BaseType.UNKNOWN);
         return new Type(BaseType.ERROR);
     }
 
@@ -1146,7 +1168,7 @@ export class Analyser implements IAnalyser {
 
         const prototypeScope = new Scope(orgScope, "prototype");  // 稍后定义父类作用域
 
-        if (!tmplOrProtoSymbol) {
+        if (!tmplOrProtoSymbol) {  // 如果找不到蓝图
             this.reportError(new ReferenceWarning(
                 this.localet?.("NWA6", node.blueprint.value) || `Unknown **blueprint** \`${node.blueprint.value}\``,
                 node.blueprint.pos, endPos(node.blueprint)
@@ -1167,8 +1189,10 @@ export class Analyser implements IAnalyser {
 
         this.enterScope(prototypeScope, endPos(node.blueprint));
 
-        if ((tmplOrProtoSymbol.type instanceof TemplateType && tmplOrProtoSymbol.type.type === BaseType.TEMPLATE)
-            || (tmplOrProtoSymbol.type instanceof ObjectType && tmplOrProtoSymbol.type.type === BaseType.OBJECT)) {
+        if (
+            (tmplOrProtoSymbol.type instanceof TemplateType && tmplOrProtoSymbol.type.type === BaseType.TEMPLATE)
+            || (tmplOrProtoSymbol.type instanceof ObjectType && tmplOrProtoSymbol.type.type === BaseType.OBJECT)
+        ) {
             prototypeScope.parent = tmplOrProtoSymbol.type.prototypeScope;  // 继承原型作用域
 
             node.args.forEach(arg => this.visitArgument(arg, false, node.blueprint.value));
@@ -1230,7 +1254,7 @@ export class Analyser implements IAnalyser {
     @traceback()
     visitMemberAccess(node: MemberAccess): Type {
         const type = this.visitExpression(node.target);
-
+        
         if (type instanceof ObjectType && type.type === BaseType.OBJECT) {
 
             const member = type.prototypeScope!.lookup(node.property.value);
@@ -1238,12 +1262,11 @@ export class Analyser implements IAnalyser {
             if (member)
                 return member.type;
 
-            else
-                this.reportError(new _TypeError(
-                    this.localet?.("NEA22", node.property.value, type.name!)
-                    || `Cannot find **member** \`${node.property.value}\` in type \`${type.name}\``,
-                    node.pos, endPos(node)
-                ));
+            this.reportError(new _TypeError(
+                this.localet?.("NEA22", node.property.value, type.name!)
+                || `Cannot find **member** \`${node.property.value}\` in type \`${type.name}\``,
+                node.pos, endPos(node)
+            ));
 
             return new Type(BaseType.ERROR);
         }
