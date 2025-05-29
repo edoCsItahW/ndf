@@ -1,9 +1,9 @@
 # NDF
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/edoCsItahW/ndf)
+
 <details>
 <summary>中文版</summary>
-# NDF
-
 NDF语言是一种用于描述游戏数据的脚本语言。
 
 > [!NOTE]
