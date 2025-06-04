@@ -17,7 +17,7 @@
  * */
 import {KEYWORDS, OPERATORS, Token, TokenCategory, TokenType} from "./token";
 import {Nullable} from "../types";
-import {unified} from "../utils";
+import { isCapitalized, unified } from "../utils";
 
 
 export class Processor {
@@ -70,7 +70,7 @@ export class Processor {
     private procLiteral(): Token {
         const tk = this.advance()!;
 
-        if (KEYWORDS.has(tk.value.toLowerCase()) && unified(tk.value)) {  // 由于Bool和bool会混淆关键字和标识符,所以需要大小写统一才视为关键字
+        if (KEYWORDS.has(tk.value.toLowerCase()) && (unified(tk.value) || isCapitalized(tk.value))) {  // 由于Bool和bool会混淆关键字和标识符,所以需要大小写统一才视为关键字
             tk.type = KEYWORDS.get(tk.value.toLowerCase())!;
             tk.category = tk.value.toLowerCase() === 'div' ? TokenCategory.OPERATOR : TokenCategory.KEYWORD;
         }

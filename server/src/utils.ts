@@ -445,6 +445,11 @@ export function unified(identifier: string): boolean {
     return identifier === identifier.toUpperCase() || identifier === identifier.toLowerCase();
 }
 
+export function isCapitalized(identifier: string): boolean {
+    if (!identifier.length) return false;
+
+    return identifier[0] === identifier[0].toUpperCase() && identifier.slice(1).toLowerCase() === identifier.slice(1).toLowerCase();
+}
 
 export function serialize(msg: any): string {
     return JSON.stringify(msg);

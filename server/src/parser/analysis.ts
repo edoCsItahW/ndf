@@ -57,7 +57,7 @@ import {
 } from "./ast";
 import {
     BaseType,
-    GeneralAST,
+    Node,
     IAnalyser,
     IPos,
     IType,
@@ -951,7 +951,7 @@ export class Analyser implements IAnalyser {
         const methodName = `visit${node.nodeName}`;
 
         if (methodName in this)
-            return (this[methodName as keyof Analyser] as (node: GeneralAST) => Type)(node);
+            return (this[methodName as keyof Analyser] as (node: Node) => Type)(node);
         else
             this.reportError(new _TypeError(
                 this.localet?.("NEA11", node.nodeName) || `Unsupported **type reference** type \`${node.nodeName}\``,
@@ -1037,7 +1037,7 @@ export class Analyser implements IAnalyser {
         const methodName = `visit${node.nodeName}`;
 
         if (methodName in this && (node instanceof LeafExpression || node instanceof InternalExpression)) {
-            return (this[methodName as keyof Analyser] as (node: GeneralAST) => Type)(node);
+            return (this[methodName as keyof Analyser] as (node: Node) => Type)(node);
         } else
             this.reportError(new _TypeError(
                 this.localet?.("NEA14", node.nodeName)
@@ -1480,7 +1480,7 @@ export class Analyser implements IAnalyser {
         const methodName = `visit${node.nodeName}`;
 
         if (methodName in this)
-            return (this[methodName as keyof Analyser] as (node: GeneralAST) => Type)(node);
+            return (this[methodName as keyof Analyser] as (node: Node) => Type)(node);
         else
             this.reportError(new _TypeError(
                 this.localet?.("NEA26", node.nodeName)

@@ -18,7 +18,7 @@
 import {
     BaseType,
     BinaryOperator,
-    GeneralAST,
+    Node,
     IArgument,
     IAssignment,
     IAST,
@@ -184,10 +184,10 @@ export abstract class InternalNode extends AST implements IInternalNode {
      * @var children
      * @summary 节点子节点。
      * @desc 该属性记录了节点的子节点，用于表示节点的结构。
-     * @return {GeneralAST[]} 节点子节点。
+     * @return {Node[]} 节点子节点。
      * @abstract
      * */
-    abstract get children(): GeneralAST[];
+    abstract get children(): Node[];
 }
 
 
@@ -259,7 +259,7 @@ export abstract class LeafStatement extends LeafNode implements ILeafStatement {
  * @see InternalNode
  * */
 export abstract class InternalStatement extends InternalNode implements IInternalStatement {
-    abstract get children(): GeneralAST[];
+    abstract get children(): Node[];
 }
 
 
@@ -502,7 +502,7 @@ export class LibImportComment extends LeafComment implements ILibImportComment {
         super();
     }
 
-    get children(): GeneralAST[] {
+    get children(): Node[] {
         return [];
     }
 
@@ -619,7 +619,7 @@ export abstract class LeafTypeRef extends LeafNode implements ILeafTypeRef {
 
 
 export abstract class InternalTypeRef extends InternalNode implements IInternalTypeRef {
-    abstract get children(): GeneralAST[];
+    abstract get children(): Node[];
 }
 
 
@@ -695,7 +695,7 @@ export abstract class LeafExpression extends LeafNode implements ILeafExpression
 
 
 export abstract class InternalExpression extends InternalNode implements IInternalExpression {
-    abstract get children(): GeneralAST[];
+    abstract get children(): Node[];
 }
 
 
@@ -1414,7 +1414,7 @@ export class ErrorExpr extends LeafExpression {
 
 
 export class Visitor {
-    static visit(node: GeneralAST, visitor: (node: LeafNode | InternalNode) => boolean) {
+    static visit(node: Node, visitor: (node: LeafNode | InternalNode) => boolean) {
         if (Array.isArray(node))
             node.forEach(n => this.visit(n, visitor));
         else if (node instanceof LeafNode) {

@@ -22,7 +22,7 @@ import { Comment } from "../parser";
 export type BinaryOperator = "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "div" | "|" | "&";
 
 
-export type GeneralAST = ILeafNode | IInternalNode | Array<GeneralAST>;
+export type Node = ILeafNode | IInternalNode | Array<Node>;
 
 
 export interface IAST {
@@ -40,7 +40,7 @@ export interface ILeafNode extends IAST {
 }
 
 export interface IInternalNode extends IAST {
-    get children(): GeneralAST[];
+    get children(): Node[];
 }
 
 export interface IProgram extends IInternalNode {
