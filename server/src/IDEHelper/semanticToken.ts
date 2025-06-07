@@ -284,7 +284,7 @@ export class SemanticCollector {
         this.visitIdentifier(node.name, TokenLegend.Property);
 
         if (node.operator === "is")
-            this.handleKeyword(node.marks.operator!);
+            this.handleKeyword(node.marks.assignOrIs!);
 
         this.visitExpression(node.value);
     }

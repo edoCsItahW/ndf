@@ -28,304 +28,515 @@ export type Node = ILeafNode | IInternalNode | Array<Node>;
 export interface IAST {
     pos: IPos;
     type: IType;
+
     get nodeName(): string;
+
     toString(): string;
+
     toJSON(): object;
 }
 
-export type SeparatorComments = Array<Comment[]>;
+
+export interface ILeafNodeMark {
+    value?: Token;
+}
+
+
+export interface IInternalNodeMark {
+}
+
 
 export interface ILeafNode extends IAST {
     get value(): string;
+
+    marks: ILeafNodeMark;
 }
+
 
 export interface IInternalNode extends IAST {
     get children(): Node[];
+
+    marks: IInternalNodeMark;
 }
+
 
 export interface IProgram extends IInternalNode {
     statements: IStatement[];
 }
 
-export interface ILeafStatement extends ILeafNode {}
+
+export interface ILeafStatement extends ILeafNode {
+}
+
 
 export interface IInternalStatement extends IInternalNode {
 }
 
+
 export type IStatement = ILeafStatement | IInternalStatement;
+
 
 export interface IAssignMark {
     modifier?: Nullable<Token>;
     is?: Token;
 }
 
+
 export interface IAssignment extends IInternalStatement {
-    modifier: Nullable<'export' | 'private' | 'public'>;
+    modifier: Nullable<"export" | "private" | "public">;
     name: IIdentifier;
     value: IExpression;
+
     marks: IAssignMark;
 }
+
 
 export interface ITemplateDefMark {
     modifier?: Nullable<Token>;
     template?: Token;
+    leftBracket?: Token;
+    rightBracket?: Token;
     is?: Token;
+    leftParen?: Token;
+    rightParen?: Token;
 }
+
 
 export interface ITemplateDef extends IInternalStatement {
-    modifier: Nullable<'private'>;
+    modifier: Nullable<"private">;
     name: IIdentifier;
+    comments1: IComment[];
     params: IParameterDecl[];
+    comments2: IComment[];
+    comments3: IComment[];
     extend: IIdentifier;
+    comments4: IComment[];
+    comments5: IComment[];
     members: IMemberAssign[];
+
     marks: ITemplateDefMark;
-
-    pos1Comments: IComment[];
-    pos2Comments: IComment[];
-    pos3Comments: IComment[];
-    pos4Comments: IComment[];
-
-    separatorComments1: SeparatorComments;
-    separatorComments2: SeparatorComments;
 }
+
 
 export interface IUnnamedObjMark {
     unnamed?: Token;
+    leftParen?: Token;
+    rightParen?: Token;
 }
+
 
 export interface IUnnamedObj extends IInternalStatement {
     blueprint: IIdentifier;
+    comments1: IComment[];
+    comments2: IComment[];
     args: IArgument[];
+
     marks: IUnnamedObjMark;
-
-    pos1Comments: IComment[];
-
-    separatorComments: SeparatorComments;
 }
 
-export interface ILeafComment extends ILeafStatement {
+
+export interface IComment extends ILeafStatement {
+    trailingNewLines: number;
 }
 
-export interface IInternalComment extends IInternalStatement {}
 
-export type IComment = ILeafComment | IInternalComment;
-
-export interface IFileImportComment extends ILeafComment {
+export interface IFileImportComment extends IComment {
     path: string;
     items: string[];
 }
 
-export interface ILibImportComment extends ILeafComment {
+
+export interface ILibImportComment extends IComment {
     items: string[];
 }
 
-export interface ICommonComment extends ILeafComment {
+
+export interface ICommonComment extends IComment {
     category: "doc" | "common";
 }
 
+
+export interface IParameterDeclMark {
+    colonOrAssign?: Token;
+    meybeComma?: Token;
+}
+
+
 export interface IParameterDecl extends IInternalNode {
+    comments1: IComment[];
     name: IIdentifier;
     annotation: Nullable<ITypeRef>;
     default: Nullable<IExpression>;
+    comments2: IComment[];
 
-    pos1Comments: IComment[];
+    marks: IParameterDeclMark;
 }
+
 
 export interface IMemberAssignMark {
-    operator?: Token;
+    assignOrIs?: Token;
 }
+
 
 export interface IMemberAssign extends IInternalNode {
     name: IIdentifier;
-    operator: '=' | 'is';
+    operator: "=" | "is";
+    comments1: IComment[];
     value: IExpression;
-    marks: IMemberAssignMark;
+    comments2: IComment[];
 
-    pos1Comments: IComment[];
+    marks: IMemberAssignMark;
 }
 
-export interface ILeafTypeRef extends ILeafNode {}
 
-export interface IInternalTypeRef extends IInternalNode {}
+export interface ILeafTypeRefMark extends ILeafNodeMark {
+    meybeComma?: Token;
+}
+
+
+export interface IInternalTypeRefMark extends IInternalNodeMark {
+    meybeComma?: Token;
+}
+
+
+export interface ILeafTypeRef extends ILeafNode {
+    marks: ILeafTypeRefMark;
+}
+
+
+export interface IInternalTypeRef extends IInternalNode {
+    marks: IInternalTypeRefMark;
+}
+
 
 export type ITypeRef = ILeafTypeRef | IInternalTypeRef;
 
+
+export interface IBuiltinTypeMark extends ILeafTypeRefMark {
+}
+
+
 export interface IBuiltinType extends ILeafTypeRef {
     name: string;
+
+    marks: IBuiltinTypeMark;
 }
+
+
+export interface IGenericTypeMark extends IInternalTypeRefMark {
+    meybeMap?: Token;
+    lt?: Token;
+    gt?: Token;
+}
+
 
 export interface IGenericType extends IInternalTypeRef {
     name: IIdentifier;
+    comments1: IComment[];
     typeParams: ITypeRef[];
 
-    pos1Comments: IComment[];
-
-    separatorComments: SeparatorComments;
+    marks: IGenericTypeMark;
 }
 
-export interface ILeafExpression extends ILeafNode {}
 
-export interface IInternalExpression extends IInternalNode {}
+export interface ILeafExpressionMark extends ILeafNodeMark {
+    meybeComma?: Token;
+}
+
+
+export interface IInternalExpressionMark extends IInternalNodeMark {
+    meybeComma?: Token;
+}
+
+
+export interface ILeafExpression extends ILeafNode {
+    trailingComments: IComment[];
+    leadingComments: IComment[];
+
+    marks: ILeafExpressionMark;
+}
+
+
+export interface IInternalExpression extends IInternalNode {
+    trailingComments: IComment[];
+    leadingComments: IComment[];
+
+    marks: IInternalExpressionMark;
+}
+
 
 export type IExpression = ILeafExpression | IInternalExpression;
 
-export interface IIdentifier extends ILeafExpression {
-    name: string;
+
+export interface IIdentifierMark extends ILeafExpressionMark {
+    value?: Token;
 }
 
+
+export interface IIdentifier extends ILeafExpression {
+    name: string;
+
+    marks: IIdentifierMark;
+}
+
+
+export interface IUnaryExprMark extends IInternalExpressionMark {
+    subOrNot?: Token;
+}
+
+
 export interface IUnaryExpr extends IInternalExpression {
-    operator: '-' | '!';
+    operator: "-" | "!";
     operand: IExpression;
 }
 
-export interface IBinaryExpr extends IInternalExpression{
+
+export interface IBinaryExprMark extends IInternalExpressionMark {
+    operator?: Token;
+}
+
+
+export interface IBinaryExpr extends IInternalExpression {
     left: IExpression;
+    comments1: IComment[];
     operator: BinaryOperator;
+    comments2: IComment[];
     right: IExpression;
 
-    pos1Comments: IComment[];
-    pos2Comments: IComment[];
+    marks: IBinaryExprMark;
 }
+
+
+export interface ITernaryExprMark extends IInternalExpressionMark {
+    question?: Token;
+    colon?: Token;
+}
+
 
 export interface ITernaryExpr extends IInternalExpression {
     condition: IExpression;
+    comments1: IComment[];
+    comments2: IComment[];
     trueExpr: IExpression;
+    comments3: IComment[];
+    comments4: IComment[];
     falseExpr: IExpression;
 
-    pos1Comments: IComment[];
-    pos2Comments: IComment[];
-    pos3Comments: IComment[];
-    pos4Comments: IComment[];
+    marks: ITernaryExprMark;
 }
 
-export interface ITemplateParam extends IInternalExpression {
+
+export interface ITemplateParamMark extends ILeafExpressionMark {
+    lt?: Token;
+    gt?: Token;
+    value?: Token;
+}
+
+
+export interface ITemplateParam extends ILeafExpression {
     name: IIdentifier;
 
-    pos1Comments: IComment[];
-    pos2Comments: IComment[];
+    marks: ITemplateParamMark;
 }
+
+
+export interface IObjectCallMark extends IInternalExpressionMark {
+    leftParen?: Token;
+    rightParen?: Token;
+}
+
 
 export interface IObjectCall extends IInternalExpression {
     blueprint: IIdentifier;
+    comments1: IComment[];
+    comments2: IComment[];
     args: IArgument[];
 
-    pos1Comments: IComment[];
-
-    separatorComments: SeparatorComments;
+    marks: IObjectCallMark;
 }
+
+
+export interface IIndexAccessMark extends IInternalExpressionMark {
+    leftBracket?: Token;
+    rightBracket?: Token;
+}
+
 
 export interface IIndexAccess extends IInternalExpression {
     target: IExpression;
     index: IExpression;
 
-    pos1Comments: IComment[];
-    pos2Comments: IComment[];
+    marks: IIndexAccessMark;
 }
+
+
+export interface IMemberAccessMark extends IInternalExpressionMark {
+    div?: Token;
+}
+
 
 export interface IMemberAccess extends IInternalExpression {
     target: IExpression;
     property: IIdentifier;
 }
 
+
+export interface IParenthesisExprMark extends IInternalExpressionMark {
+    leftParen?: Token;
+    rightParen?: Token;
+}
+
+
 export interface IParenthesisExpr extends IInternalExpression {
     expr: IExpression;
 
-    pos1Comments: IComment[];
-    pos2Comments: IComment[];
+    marks: IParenthesisExprMark;
 }
 
-export interface IReference extends ILeafExpression {
-    path: string;
+
+export interface IReferenceMark extends ILeafExpressionMark {
+    dollarOrTildeOrDot?: Token;
+    div?: Token;
+    value?: Token;
 }
+
+
+export interface IReference extends ILeafExpression {
+    name: IIdentifier;
+
+    marks: IReferenceMark;
+}
+
+
+export interface IGuidCallMark extends ILeafExpressionMark {
+    colon?: Token;
+    leftBrace?: Token;
+    rightBrace?: Token;
+    guid?: Token;
+    value?: Token;
+}
+
 
 export interface IGuidCall extends ILeafExpression {
     uuid: string;
 
-    pos1Comments: IComment[];
-    pos2Comments: IComment[];
+    marks: IGuidCallMark;
 }
 
-export interface IMapDefMark {
+
+export interface IMapDefMark extends IInternalExpressionMark {
     map?: Token;
+    leftBracket?: Token;
+    rightBracket?: Token;
 }
+
 
 export interface IMapDef extends IInternalExpression {
+    comments1: IComment[];
     pairs: IPair[];
+    comments2: IComment[];
+
     marks: IMapDefMark;
-
-    pos1Comments: IComment[];
-
-    separatorComments: SeparatorComments;
 }
+
+
+export interface IPairMark extends IInternalExpressionMark {
+    leftParen?: Token;
+    rightParen?: Token;
+    comma?: Token;
+}
+
 
 export interface IPair extends IInternalExpression {
     key: IExpression;
     value: IExpression;
 
-    pos1Comments: IComment[];
-    pos2Comments: IComment[];
-    pos3Comments: IComment[];
-    pos4Comments: IComment[];
+    marks: IPairMark;
 }
+
+
+export interface IVectorDefMark extends IInternalExpressionMark {
+    leftBracket?: Token;
+    rightBracket?: Token;
+}
+
 
 export interface IVectorDef extends IInternalExpression {
     elements: IExpression[];
+    comments1: IComment[];
 
-    separatorComments: SeparatorComments;
+    marks: IVectorDefMark;
 }
+
+
+export interface ITypeConstructorMark extends IInternalExpressionMark {
+    leftBracket?: Token;
+    rightBracket?: Token;
+}
+
 
 export interface ITypeConstructor extends IInternalExpression {
     name: IIdentifier;
+    comments1: IComment[];
     args: IExpression[];
 
-    pos1Comments: IComment[];
-
-    separatorComments: SeparatorComments;
+    marks: ITypeConstructorMark;
 }
 
-export interface IPropertyAssignMark {
+
+export interface IPropertyAssignMark extends IInternalExpressionMark {
     modifier?: Token;
+    is?: Token;
 }
+
 
 export interface IPropertyAssignExpr extends IInternalExpression {
-    modifier: Nullable<'private'>;
+    modifier: Nullable<"private">;
     name: IIdentifier;
     value: IExpression;
     marks: IPropertyAssignMark;
 }
 
-export interface IArgumentMMark {
+
+export interface IArgumentMark extends IInternalNodeMark {
     modifier?: Token;
-    operator?: Token;
+    colonOrAssignOrIs?: Token;
 }
+
 
 export interface IArgument extends IInternalNode {
-    modifier: Nullable<'export' | 'public'>;
+    modifier: Nullable<"export" | "public">;
     name: IIdentifier;
     value: Nullable<IExpression>;
-    operator: Nullable<'=' | 'is'>;
+    operator: Nullable<"=" | "is">;
     annotation: Nullable<ITypeRef>;
-    marks: IArgumentMMark;
+    comments1: IComment[];
 
-    pos1Comments: IComment[];
+    marks: IArgumentMark;
 }
+
 
 export interface ILiteral extends ILeafExpression {
 }
 
-export interface IInteger extends ILiteral, ILeafNode {
+
+export interface IInteger extends ILiteral {
 }
 
-export interface IFloat extends ILiteral, ILeafNode {
+
+export interface IFloat extends ILiteral {
 }
 
-export interface IBoolean extends ILiteral, ILeafNode {
+
+export interface IBoolean extends ILiteral {
     value: string;
 }
 
-export interface IString extends ILiteral, ILeafNode {
+
+export interface IStr extends ILiteral {
 }
 
-export interface INil extends ILiteral, ILeafNode {
-    value: 'nil'
+
+export interface INil extends ILiteral {
+    value: "nil";
 }

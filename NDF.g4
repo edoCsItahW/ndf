@@ -6,17 +6,17 @@ Statement: Assignment | TemplateDef | UnnameObj | Comment;
 
 Assignment: ('private' | 'export' | 'public')? Identifier 'is' Expression;
 
-TemplateDef: ('private')? 'template' Identifier (Newline | Comment)* ParameterBlock (Newline | Comment)* 'is' Newline* Identifier (Newline | Comment)* MemberBlock;
+TemplateDef: ('private')? 'template' Identifier Divider* ParameterBlock Divider* 'is' Divider* Identifier Divider* MemberBlock;
 
-UnnameObj: 'unnamed' Identifier ObjectCall;
+UnnameObj: 'unnamed' Identifier Divider* ObjectCall;
 
 ParameterBlock: '[' ParameterDecl (',' ParameterDecl)* | Empty ']';
 
-MemberBlock: '(' MemberAssign* ')';
+MemberBlock: '(' Divider* MemberAssign* ')';
 
-ParameterDecl: Identifier Annotation? DefaultValue?;
+ParameterDecl: Divider* Identifier (Annotation | DefaultValue)? Divider*;
 
-MemberAssign: Identifier ('=' | 'is') (Newline | Comment)* Expression;
+MemberAssign: Identifier ('=' | 'is') Divider* Expression Divider*;
 
 Annotation: ':' TypeRef;
 
@@ -26,36 +26,36 @@ TypeRef: BuiltinType | Identifier | GenericType;
 
 BuiltinType: 'int' | 'float' | 'bool' | 'string';
 
-GenericType: (Identifier | 'MAP') (Newline | Comment)* '<' (Newline | Comment)* TypeRef ((Newline | Comment)* ',' (Newline | Comment)* TypeRef)* (Newline | Comment)* '>';
+GenericType: (Identifier | 'MAP') Divider* '<' TypeRef (',' TypeRef)* '>';
 
 /* 表达式分层结构 */
-Expression: TernaryExpr;
+Expression: Divider* TernaryExpr Divider*;
 
-TernaryExpr: LogicalOrExpr ((Newline | Comment)* '?' (Newline | Comment)* Expression (Newline | Comment)* ':' (Newline | Comment)* TernaryExpr)?;
+TernaryExpr: LogicalOrExpr (Divider* '?' Divider* Expression Divider* ':' Divider* TernaryExpr)?;
 
-LogicalOrExpr: LogicalAndExpr ((Newline | Comment)* '|' (Newline | Comment)* LogicalAndExpr)*;
+LogicalOrExpr: LogicalAndExpr (Divider* '|' Divider* LogicalAndExpr)*;
 
-LogicalAndExpr: EqualityExpr ((Newline | Comment)* '&' (Newline | Comment)* EqualityExpr)*;
+LogicalAndExpr: EqualityExpr (Divider* '&' Divider* EqualityExpr)*;
 
-EqualityExpr: RelationalExpr ((Newline | Comment)* ('==' | '!=') (Newline | Comment)* RelationalExpr)*;
+EqualityExpr: RelationalExpr (Divider* ('==' | '!=') Divider* RelationalExpr)*;
 
 RelationalExpr:
-	AdditiveExpr ((Newline | Comment)* ('<' | '>' | '<=' | '>=') (Newline | Comment)* AdditiveExpr)*;
+	AdditiveExpr (Divider* ('<' | '>' | '<=' | '>=') Divider* AdditiveExpr)*;
 
 AdditiveExpr:
-	MultiplicativeExpr ((Newline | Comment)* ('+' | '-') (Newline | Comment)* MultiplicativeExpr)*;
+	MultiplicativeExpr (Divider* ('+' | '-') Divider* MultiplicativeExpr)*;
 
 MultiplicativeExpr:
     /* UnaryExpr | BinaryExpr */
-	UnaryExpr ((Newline | Comment)* ('*' | 'div' | '%') (Newline | Comment)* UnaryExpr)*;
+	UnaryExpr (Divider* ('*' | 'div' | '%') Divider* UnaryExpr)*;
 
 UnaryExpr: ('-' | '!')? PostfixExpr;
 
-PostfixExpr: PrimaryExpr (ObjectCall | IndexAccess | MemberAccess)*;
+PostfixExpr: PrimaryExpr (ObjectCall | IndexAccess | MemberAccess)?;
 
-ObjectCall: '(' (Newline | Comment)* Argument* (Newline | Comment)* ')';
+ObjectCall: '(' Divider* Argument* ')';
 
-IndexAccess: '[' (Newline | Comment)* Expression (Newline | Comment)* ']';
+IndexAccess: '[' Expression ']';
 
 MemberAccess: '/' Identifier;
 
@@ -75,28 +75,30 @@ PrimaryExpr:
 
 PropertyAssignExpr: ('private')? Identifier 'is' Expression;
 
-ParenthesisExpr: '(' (Newline | Comment)* Expression (Newline | Comment)* ')';
+ParenthesisExpr: '(' Divider* Expression Divider* ')';
 
-TemplateParam: '<' (Newline | Comment)* Identifier (Newline | Comment)* '>';
+TemplateParam: '<' Identifier '>';
 
-MapDef: 'MAP' (Newline | Comment)* '[' (Newline | Comment)* Pair ((Newline | Comment)* ',' (Newline | Comment)* Pair)* (Newline | Comment)* ']';
+MapDef: 'MAP' Divider* '[' Pair (',' Pair)* ']';
 
-VectorDef: '[' (Newline | Comment)* (Expression ((Newline | Comment)* ',' (Newline | Comment)* Expression)* | Empty) (Newline | Comment)* ']';
+VectorDef: '[' (Expression (',' Expression)* | Empty) ']';
 
 TypeConstructor:
-	Identifier (Newline | Comment)* '[' (Newline | Comment)* (Expression ((Newline | Comment)* ',' (Newline | Comment)* Expression)* | Empty) (Newline | Comment)* ']';
+	Identifier Divider* '[' (Expression (',' Expression)* | Empty) ']';
 
 GuidCall:
-	'GUID' ':' '{' (Newline | Comment)* Uuid (Newline | Comment)* '}';
+	'GUID' ':' '{' Divider* Uuid Divider* '}';
 
-Reference: ('$' | '~' | '.') '/' Identifier ('/' Identifier)*;
+Reference: ('$' | '~' | '.') '/' Identifier;
 
-Pair: '(' (Newline | Comment)* Expression (Newline | Comment)* ',' (Newline | Comment)* Expression (Newline | Comment)* ')';
+Pair: '(' Divider* Expression Divider* ',' Divider* Expression Divider* ')';
 
 Uuid: HexDigit {8} '-' HexDigit {4} '-' HexDigit {4} '-' HexDigit {4} '-' HexDigit {12};
 
 /* 词法规则 */
 Identifier: (Letter | '_') (Letter | '_' | Digit)*;
+
+Divider: Newline | Comment;
 
 Literal: Integer | Float | Boolean | String | Nil;
 
@@ -108,7 +110,7 @@ Nil: 'nil';
 
 Empty: ;
 
-Argument: ('exprot' | 'public')? Identifier (Annotation | ('=' | 'is') Expression);
+Argument: ('exprot' | 'public')? Identifier (Annotation | ('=' | 'is') Expression) Divider*;
 
 HexDigit: [0-9a-fA-F];
 Letter: [a-zA-Z];

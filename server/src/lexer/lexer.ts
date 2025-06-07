@@ -14,12 +14,12 @@
  * @desc 定义了Lexer类，用于将源代码字符串解析为Token数组。
  * @copyright CC BY-NC-SA 2025. All rights reserved.
  * */
-import {isDigit, isHexDigit, isIdentifierChar, isLetter, isWhiteSpace, Pos} from "../utils";
-import {OPERATORS, Token, TokenCategory, TokenType, WHITESPACE_CHARS} from "./token";
-import {IPos, Nullable, PartialLocalet} from "../types";
-import {_SyntaxError} from "../expection";
+import { isDigit, isHexDigit, isIdentifierChar, isLetter, isWhiteSpace, Pos } from "../utils";
+import { OPERATORS, Token, TokenCategory, TokenType, WHITESPACE_CHARS } from "./token";
+import { IPos, Nullable, PartialLocalet } from "../types";
+import { _SyntaxError } from "../expection";
 import { Locale } from "../IDEHelper";
-import {methodDebug} from "../debug";
+import { methodDebug } from "../debug";
 
 
 /**
@@ -61,6 +61,8 @@ export class Lexer {
      * */
     errors: _SyntaxError[] = [];
 
+    private reference: boolean = false;
+
     /**
      * @constructor
      * @param {string} src - 源代码字符串。
@@ -97,47 +99,58 @@ export class Lexer {
     }
 
     next(): Token {
-        this.skip();
+        const preSpace = this.skip();
         const start = this.pos.pos;
 
+        const orgRef = this.reference && !!preSpace;
+        this.reference = false;
 
         if (!this.current)
-            return new Token(TokenType.EOF, this.pos);
+            return new Token(TokenType.EOF, this.pos, "", TokenCategory.OTHER, preSpace);
 
-        else if (this.current === '\n') {
+        if (this.current === "\n") {
             this.pos.newline();
-            return new Token(TokenType.NEWLINE, start, '\\n', TokenCategory.WHITESPACE);
+            return new Token(TokenType.NEWLINE, start, "\\n", TokenCategory.WHITESPACE, preSpace);
         }
 
-        else if (isLetter(this.current))
-            return this.extractIdentifier();
-
-        else if (isDigit(this.current) || (this.current === '.' && this.peek() && isDigit(this.peek()!)))
-            return this.extractNumber();
-
-        else if (this.current === '"' || this.current === "'")
-            return this.extractString();
-
-        else if (['$', '~', '.'].includes(this.current))
-            return this.extractReference();
-
-        else if (this.current === '/') {
-            if (this.peek() && this.peek()! === '/')  // Referecne may also have '//', but we have resolved and ruled it out
-                return this.extractLineComment();
-            else if (this.peek() && this.peek()! === '*')
-                return this.extractBlockComment();
-            else
-                return this.extractOperator();
+        if (isLetter(this.current)) {
+            if (orgRef)
+                this.reference = true;
+            return this.extractIdentifier(preSpace);
         }
 
-        else if (this.current === '(' && this.peek() && this.peek()! === '*')
-            return this.extractBlockComment();
+        if (isDigit(this.current) || (this.current === "." && this.peek() && isDigit(this.peek()!)))
+            return this.extractNumber(preSpace);
 
-        else if (OPERATORS.has(this.current))
-            return this.extractOperator();
+        if (this.current === "\"" || this.current === "'")
+            return this.extractString(preSpace);
+
+        if (["$", "~", "."].includes(this.current))
+            this.reference = true;
+
+        if (this.current === "/") {
+            if (orgRef) {
+                this.reference = true;
+                return this.extractOperator(preSpace);
+            }
+
+            if (this.peek() && this.peek()! === "/")  // Referecne may also have '//', but we have resolved and ruled it out
+                return this.extractLineComment(preSpace);
+
+            else if (this.peek() && this.peek()! === "*")
+                return this.extractBlockComment(preSpace);
+
+            return this.extractOperator(preSpace);
+        }
+
+        if (this.current === "(" && this.peek() && this.peek()! === "*")
+            return this.extractBlockComment(preSpace);
+
+        if (OPERATORS.has(this.current))
+            return this.extractOperator(preSpace);
 
         this.reportError(this.localet?.("NEL1") || "Invalid token", start, this.pos.pos);
-        const tk = new Token(TokenType.UNKNOWN, this.pos, "", TokenCategory.INVALID);
+        const tk = new Token(TokenType.UNKNOWN, this.pos, "", TokenCategory.INVALID, preSpace);
         this.pos.next();
         return tk;
     }
@@ -154,13 +167,24 @@ export class Lexer {
         return this.src[this.pos.offset + n];
     }
 
-    private skip() {
-        while (this.inScope() && isWhiteSpace(this.current) && this.current !== '\n')
+    /**
+     * @method skip
+     * @summary 跳过空白字符。
+     * @desc 该方法用于跳过空白字符，并返回跳过的字符数。
+     * @returns {number} 跳过的字符数。
+     * */
+    private skip(): number {
+        let count = 0;
+        while (this.inScope() && isWhiteSpace(this.current) && this.current !== "\n") {
             this.pos.next();
+            count++;
+        }
+
+        return count;
     }
 
     @methodDebug(lexerDebug)
-    private extractIdentifier(): Token {
+    private extractIdentifier(preSpace: number): Token {
         let value = "";
         const start = this.pos.pos;
 
@@ -169,38 +193,43 @@ export class Lexer {
             this.pos.next();
         }
 
-        return new Token(TokenType.UNKNOWN, start, value, TokenCategory.LITERAL);
+        return new Token(TokenType.UNKNOWN, start, value, TokenCategory.LITERAL, preSpace);
     }
 
     @methodDebug(lexerDebug)
-    private extractNumber(): Token {
+    private extractNumber(preSpace: number): Token {
         let value = "";
         const start = this.pos.pos;
         let vaild = true;
-        let type: 'f' | 'h' | 'i' | 'u' = 'i';
+        let type: "f" | "h" | "i" | "u" = "i";
 
-        if (this.current === '0' && this.peek() && this.peek()!.toLowerCase() === 'x') {  // hex number
+        if (this.current === "0" && this.peek() && this.peek()!.toLowerCase() === "x") {  // hex number
             value += this.current + this.peek()!;
             this.pos.move(2);
-            type = 'h';
+            type = "h";
         }
 
-        while (this.inScope() && ((type === 'h' ? isHexDigit(this.current) : isDigit(this.current)) || this.current === '.')) {
-            if (this.current === '.' && type !== 'h') {
-                if (type === 'f') break;  // already has a decimal point
+        while (this.inScope() && ((type === "h" ? isHexDigit(this.current) : isDigit(this.current)) || this.current === ".")) {
+            if (this.current === "." && type !== "h") {
+                if (type === "f") break;  // already has a decimal point
 
-                type = 'f';
+                type = "f";
             }
 
             value += this.current;
             this.pos.next();
         }
 
-        return new Token(type === 'f' ? TokenType.FLOAT : TokenType.INT, start, value, vaild ? TokenCategory.LITERAL : TokenCategory.INVALID);
+        return new Token(
+            type === "f" ? TokenType.FLOAT : TokenType.INT,
+            start, value,
+            vaild ? TokenCategory.LITERAL : TokenCategory.INVALID,
+            preSpace
+        );
     }
 
     @methodDebug(lexerDebug)
-    private extractString(): Token {
+    private extractString(preSpace: number): Token {
         const quote = this.current;
         let value = quote;
         const start = this.pos.pos;
@@ -210,83 +239,59 @@ export class Lexer {
             if (WHITESPACE_CHARS.has(this.current)) {
                 value += `\\${WHITESPACE_CHARS.get(this.current)!}`;
                 this.pos.next();  // In a string, '\' and 'n' are not considered spaces
-            }
-            else
+            } else
                 value += this.current;
             this.pos.next();
         }
 
         value += quote;
         this.pos.next();  // skip quote
-        return new Token(TokenType.STRING, start, value, TokenCategory.LITERAL);
+        return new Token(TokenType.STRING, start, value, TokenCategory.LITERAL, preSpace);
     }
 
     @methodDebug(lexerDebug)
-    private extractReference(): Token {
-        let value = this.current;
-        const start = this.pos.pos;
-        let valid = true;
-        this.pos.next();  // skip $, ~ or .
-
-        if (this.current !== '/') {
-            this.reportError(this.localet?.("NEL2") || "Invalid **reference**", start, this.pos.pos);
-            valid = false;
-        }
-
-        value += this.current;
-        this.pos.next();  // skip /
-
-        while (this.inScope() && (isIdentifierChar(this.current!) || this.current === '/')) {
-            value += this.current;
-            this.pos.next();
-        }
-
-        return new Token(TokenType.REFERENCE, start, value, valid ? TokenCategory.LITERAL : TokenCategory.INVALID);
-    }
-
-    @methodDebug(lexerDebug)
-    private extractLineComment(): Token {
+    private extractLineComment(preSpace: number): Token {
         let value = "//";
         const start = this.pos.pos;
         this.pos.move(2);  // skip //
 
-        while (this.inScope() && this.current !== '\n') {
+        while (this.inScope() && this.current !== "\n") {
             value += this.current;
             this.pos.next();
         }
 
-        return new Token(TokenType.COMMENT_LINE, start, value, TokenCategory.COMMENT);
+        return new Token(TokenType.COMMENT_LINE, start, value, TokenCategory.COMMENT, preSpace);
     }
 
     @methodDebug(lexerDebug)
-    private extractBlockComment(): Token {
+    private extractBlockComment(preSpace: number): Token {
         let value = this.current + "*";
         const start = this.pos.pos;
-        const comment = this.current === '/' ? '/' : ')';
+        const comment = this.current === "/" ? "/" : ")";
         this.pos.move(2);  // skip /* or (*
 
-        while (this.inScope() && !(this.current === '*' && this.peek() === comment)) {
+        while (this.inScope() && !(this.current === "*" && this.peek() === comment)) {
             value += this.current;
-            this.current === '\n' ? this.pos.newline() : this.pos.next();
+            this.current === "\n" ? this.pos.newline() : this.pos.next();
         }
 
         value += this.current + this.peek()!;
         this.pos.move(2);  // skip */ or *)
 
-        return new Token(TokenType.COMMENT_BLOCK, start, value, TokenCategory.COMMENT);
+        return new Token(TokenType.COMMENT_BLOCK, start, value, TokenCategory.COMMENT, preSpace);
     }
 
     @methodDebug(lexerDebug)
-    private extractOperator(): Token {
+    private extractOperator(preSpace: number): Token {
         const start = this.pos.pos;
 
         let op: Token;
 
         if (OPERATORS.has(this.current))
-            op = new Token(OPERATORS.get(this.current)!, start, this.current, TokenCategory.OPERATOR);
+            op = new Token(OPERATORS.get(this.current)!, start, this.current, TokenCategory.OPERATOR, preSpace);
         else {
             this.reportError(this.localet?.("NEL3") || "Invalid **operator**", start, this.pos.pos);
-            op = new Token(TokenType.UNKNOWN, start, this.current, TokenCategory.INVALID);
+            op = new Token(TokenType.UNKNOWN, start, this.current, TokenCategory.INVALID, preSpace);
         }
 
         this.pos.next();  // skip operator

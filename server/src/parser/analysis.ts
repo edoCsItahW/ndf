@@ -1288,58 +1288,61 @@ export class Analyser implements IAnalyser {
     @methodDebug(analyserDebug, "visitReference")
     @traceback()
     visitReference(node: Reference): Type {
-        const paths = node.path.split("/").slice(1);
+//        const paths = node.path.split("/").slice(1);
+//
+//        let idx = 0;
+//        let symbol: Nullable<Symbol>;
+//        let pos: IPos = { line: node.pos.line, column: node.pos.column + 2 };
+//
+//        while (idx < paths.length) {
+//            const name = paths[idx];
+//
+//            symbol = idx === 0
+//                ? this.currentScope.lookup(name, ["template", "prototype"]) || this.globalSymbolCallback?.(name)
+//                : (symbol!.type as TemplateType | ObjectType).prototypeScope!.lookup(name, ["template", "prototype"]);
+//
+//            if (symbol) {
+//                // 最后一项可以是模板或原型,但非尾部的项必须是原型
+//                if (
+//                    !(symbol.type instanceof TemplateType || symbol.type instanceof ObjectType)
+//                    && idx !== paths.length - 1
+//                ) {
+//                    this.reportError(new _TypeError(
+//                        this.localet?.("NEA34", name) || `Type '${name}' does not support \`property access\``,
+//                        pos, { line: pos.line, column: pos.column + name.length }
+//                    ));
+//
+//                    return new Type(BaseType.ERROR);
+//                }
+//            }
+//
+//            if (!symbol) {
+//                if (idx === 0) {
+//                    this.reportError(new DefineError(
+//                        this.localet?.("NEA15", name) || `Unknown **identifier** \`${name}\``,
+//                        pos, { line: pos.line, column: pos.column + name.length })
+//                    );
+//
+//                    return new Type(BaseType.UNKNOWN);
+//                } else {
+//                    this.reportError(new ReferenceWarning(
+//                        this.localet?.("NEA35", name, typeToStr(symbol!.type))
+//                        || `Property '${typeToStr(symbol!.type)}' does not exist on type '${name}'`,
+//                        pos, { line: pos.line, column: pos.column + name.length }
+//                    ));
+//
+//                    return new Type(BaseType.ERROR);
+//                }
+//            }
+//
+//            pos = { line: pos.line, column: pos.column + name.length + 1 };
+//            idx++;
+//        }
+//
+//        node.type = symbol!.type;
 
-        let idx = 0;
-        let symbol: Nullable<Symbol>;
-        let pos: IPos = { line: node.pos.line, column: node.pos.column + 2 };
-
-        while (idx < paths.length) {
-            const name = paths[idx];
-
-            symbol = idx === 0
-                ? this.currentScope.lookup(name, ["template", "prototype"]) || this.globalSymbolCallback?.(name)
-                : (symbol!.type as TemplateType | ObjectType).prototypeScope!.lookup(name, ["template", "prototype"]);
-
-            if (symbol) {
-                // 最后一项可以是模板或原型,但非尾部的项必须是原型
-                if (
-                    !(symbol.type instanceof TemplateType || symbol.type instanceof ObjectType)
-                    && idx !== paths.length - 1
-                ) {
-                    this.reportError(new _TypeError(
-                        this.localet?.("NEA34", name) || `Type '${name}' does not support \`property access\``,
-                        pos, { line: pos.line, column: pos.column + name.length }
-                    ));
-
-                    return new Type(BaseType.ERROR);
-                }
-            }
-
-            if (!symbol) {
-                if (idx === 0) {
-                    this.reportError(new DefineError(
-                        this.localet?.("NEA15", name) || `Unknown **identifier** \`${name}\``,
-                        pos, { line: pos.line, column: pos.column + name.length })
-                    );
-
-                    return new Type(BaseType.UNKNOWN);
-                } else {
-                    this.reportError(new ReferenceWarning(
-                        this.localet?.("NEA35", name, typeToStr(symbol!.type))
-                        || `Property '${typeToStr(symbol!.type)}' does not exist on type '${name}'`,
-                        pos, { line: pos.line, column: pos.column + name.length }
-                    ));
-
-                    return new Type(BaseType.ERROR);
-                }
-            }
-
-            pos = { line: pos.line, column: pos.column + name.length + 1 };
-            idx++;
-        }
-
-        node.type = symbol!.type;
+        // TODO:
+        const symbol = this.findSymbol()
 
         return symbol!.type;
     }
