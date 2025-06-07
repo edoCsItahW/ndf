@@ -1341,7 +1341,7 @@ export class Analyser implements IAnalyser {
 //
 //        node.type = symbol!.type;
 
-        // TODO:
+        // TODO: 完成引用解析
         const symbol = this.findSymbol()
 
         return symbol!.type;
