@@ -15,8 +15,8 @@
  * @desc
  * @copyrigh-t CC BY-NC-SA 2025. All rights reserved.
  * */
-import {KEYWORDS, OPERATORS, Token, TokenCategory, TokenType} from "./token";
-import {Nullable} from "../types";
+import { KEYWORDS, OPERATORS, Token, TokenCategory, TokenType } from "./token";
+import { Nullable } from "../types";
 import { isCapitalized, unified } from "../utils";
 
 
@@ -70,11 +70,14 @@ export class Processor {
     private procLiteral(): Token {
         const tk = this.advance()!;
 
-        if (KEYWORDS.has(tk.value.toLowerCase()) && (unified(tk.value) || isCapitalized(tk.value))) {  // 由于Bool和bool会混淆关键字和标识符,所以需要大小写统一才视为关键字
+        if (
+            KEYWORDS.has(tk.value.toLowerCase()) && unified(tk.value) || (
+                ["true", "false"].includes(tk.value.toLowerCase()) && isCapitalized(tk.value)  // 关键字true和false必须大写才能识别
+            )
+        ) {  // 由于Bool和bool会混淆关键字和标识符,所以需要大小写统一才视为关键字
             tk.type = KEYWORDS.get(tk.value.toLowerCase())!;
-            tk.category = tk.value.toLowerCase() === 'div' ? TokenCategory.OPERATOR : TokenCategory.KEYWORD;
-        }
-        else if (tk.type === TokenType.UNKNOWN)
+            tk.category = tk.value.toLowerCase() === "div" ? TokenCategory.OPERATOR : TokenCategory.KEYWORD;
+        } else if (tk.type === TokenType.UNKNOWN)
             tk.type = TokenType.IDENTIFIER;
 
         return tk;
@@ -86,7 +89,7 @@ export class Processor {
         if (this.current && (tk.pos.column !== this.current?.pos.column - 1))  // 两个符号不是连在一起的(中间有空格), 则视为两个符号
             return tk;
 
-        const merge = tk.value + (this.current?.value || '');
+        const merge = tk.value + (this.current?.value || "");
 
         if (OPERATORS.has(merge)) {
             tk.type = OPERATORS.get(merge)!;

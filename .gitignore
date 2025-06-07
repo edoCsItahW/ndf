@@ -1,4 +1,11 @@
-out
 node_modules
-client/server
+out
 .vscode-test
+
+注意.txt
+pnpm-lock.yaml
+.prettierrc.json
+scripts
+.idea
+
+*/test.json

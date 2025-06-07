@@ -1,6 +1,22 @@
 /// from '\GameData\Gameplay\Constantes\Enumerations\IADifficulty.ndf' import IADifficulty
 /// from '\CommonData\Gameplay\Constantes\Enumerations\CollisionPlane.ndf' import ECollisionPlane
 
+// 崩溃: CommonData\Scenery\LevelDesignSet\TemplateSceneryDescriptorTag.ndf
+// 128: 类型错误 CommonData\UserInterface\Use\Common\Templates\BUCKEditableTextDescriptorTemplate.ndf
+// 68: MAP语义高亮错误 CommonData\UserInterface\Use\Common\Templates\BUCKGridDescriptorTemplate.ndf
+// 185: 类型错误 CommonData\UserInterface\Use\Common\Templates\BUCKMultiListDescriptorTemplate.ndf
+// TODO: 内置类型float2支持
+// 110: 类型错误 CommonData\UserInterface\Use\Common\Templates\BUCKScrollingContainerDescriptorTemplate.ndf
+// 224: ObjectCall蓝图尾随注释错误 CommonData\UserInterface\Use\Common\Templates\BUCKWithTabsDescriptorTemplate.ndf
+// 55: 类型错误 CommonData\UserInterface\Use\BUCKAura.ndf
+// 崩溃: GameData\Gameplay\Constantes\Strategic\AutoresolveConstantes.ndf
+// 崩溃: GameData\Gameplay\Constantes\Strategic\GDConstantes.ndf
+// 崩溃: GameData\Gameplay\Constantes\GDConstantes.ndf
+// 崩溃: GameData\Gameplay\Constantes\IAStratConstantes.ndf
+// 崩溃: GameData\Gameplay\Constantes\Ravitaillement.ndf
+// 18: 类型错误 GameData\Gameplay\Gfx\DepictionResources\Vehicule\A222_Bereg_SOV.ndf
+// 崩溃: GameData\Gameplay\Gfx\Templates\StrategicPawnDepictionTemplate.ndf
+
 // 命名内置值
 /* 可以使用关键字is为内置类型的值命名，类似于在编程语言中创建变量。 */
 Gravity is 9.81
@@ -26,7 +42,6 @@ Places is [
     'Everest',
     'Mars',
     ]
-
 
 // 算术操作
 /* 常用的数字运算有：加、减、乘、除、模。 */

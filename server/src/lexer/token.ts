@@ -81,8 +81,6 @@ export enum TokenType {
     FLOAT,
     /** 字符串 */
     STRING,
-    /** 引用 */
-    REFERENCE,
     /** 标识符 */
     IDENTIFIER,
 
@@ -358,8 +356,6 @@ export function getCategory(type: TokenType): TokenCategory {
         case TokenType.INT:
         case TokenType.FLOAT:
         case TokenType.STRING:
-        case TokenType.REFERENCE:
-            return TokenCategory.LITERAL;
         case TokenType.KW_INT:
         case TokenType.KW_FLOAT:
         case TokenType.KW_STRING:
@@ -426,6 +422,7 @@ export function getCategory(type: TokenType): TokenCategory {
  * @property pos {IPos} 令牌位置
  * @property value {string} 令牌值
  * @property category {TokenCategory} 令牌类别
+ * @property preSpace {number} 前置空白字符数
  * */
 export class Token {
     state: TokenState = {
@@ -438,11 +435,22 @@ export class Token {
      * @param {IPos} pos 令牌位置
      * @param {string} [value=''] 令牌值
      * @param {TokenCategory} [category=TokenCategory.OTHER] 令牌类别
+     * @param {number} [preSpace=0] 前置空白字符数
      * */
-    constructor(public type: TokenType, public pos: IPos, public value: string = "", public category: TokenCategory = TokenCategory.OTHER) {
+    constructor(
+        public type: TokenType,
+        public pos: IPos,
+        public value: string = "",
+        public category: TokenCategory = TokenCategory.OTHER,
+        public preSpace: number = 0
+    ) {
     }
 
     toString(): string {
         return `<('${this.value}': ${enumToStr(TokenType, this.type)}) Token at ${this.pos.line}:${this.pos.column}>`;
+    }
+
+    get length(): number {
+        return this.value.length + this.preSpace;
     }
 }
