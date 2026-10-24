@@ -1,7 +1,7 @@
 {
 	"name": "ndf",
 	"description": "ndf language is a scripting language used to describe game data.",
-	"version": "2.0.3",
+	"version": "3.0.0",
 	"main": "./out/server",
 	"author": "220715023",
 	"license": "CC BY-NC-SA 4.0",

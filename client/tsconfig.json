@@ -9,6 +9,7 @@
 		"allowArbitraryExtensions": true,  // 允许任意扩展名
 		"moduleResolution": "node",  // 模块解析策略
 		"esModuleInterop": true,  // 允许模块导入时使用.js后缀
+		"skipLibCheck": true,  // 跳过第三方声明文件的类型检查(旧版 vscode-jsonrpc 与新版 TS/lib 不兼容)
 	},
 	"include": ["src"],
 	"exclude": ["node_modules", ".vscode-test"]

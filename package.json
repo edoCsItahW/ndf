@@ -4,7 +4,7 @@
     "description": "The NDF language is a scripting language used to describe game data, and this extension provides partial support for the language.",
     "author": "SongTao Xiao",
     "license": "CC BY-NC-SA 4.0",
-    "version": "2.4.5",
+    "version": "3.0.0",
     "publisher": "2207150234",
     "repository": {
         "type": "git",

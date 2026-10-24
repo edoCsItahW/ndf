@@ -9,10 +9,16 @@
 /**
  * @file semanticToken.ts
  * @author edocsitahw
- * @version 1.1
+ * @version 2.0
  * @date 2025/05/08 01:12
- * @desc
+ * @desc 语义令牌收集器（NDF 语法 v2）
  * @copyright CC BY-NC-SA 2025. All rights reserved.
+ *
+ * @remarks
+ * 遍历 AST 产出 LSP 语义令牌。与 v1 的差异：
+ * - `TypeRef` 统一处理（名字 / 泛型实参 / 注解实参）；
+ * - 支持 `DefinitionExpr`、位置实参、`GUID` 字面量、多段引用；
+ * - 额外遍历 `Program.comments`，让非语句层注释也能高亮。
  * */
 import { Token } from "../lexer";
 import {
@@ -21,16 +27,17 @@ import {
     AST,
     BinaryExpr,
     Bool,
-    BuiltinType,
+    Comment,
     CommenComment,
+    DefinitionExpr,
     Expression,
     FileImportComment,
     Float,
-    GenericType,
     GuidCall,
     Identifier,
     IndexAccess,
-    Integer, LibImportComment,
+    Integer,
+    LibImportComment,
     Literal,
     MapDef,
     MemberAccess,
@@ -42,7 +49,6 @@ import {
     ParameterDecl,
     ParenthesisExpr,
     Program,
-    PropertyAssignExpr,
     Reference,
     Statement,
     Str,
@@ -50,15 +56,14 @@ import {
     TemplateParam,
     TemplateType,
     TernaryExpr,
-    TypeConstructor,
+    TypeAnnotation,
     TypeRef,
     UnaryExpr,
     UnnamedObj,
     VectorDef
 } from "../parser";
 import { IPos, Nullable } from "../types";
-import { methodDebug, regexStack } from "../debug";
-import { enumToStr } from "../utils";
+import { methodDebug } from "../debug";
 
 
 export enum TokenLegend {
@@ -96,39 +101,10 @@ export enum TokenModifier {
 
 
 interface ISemanticToken {
-    /**
-     * @summary 行偏移量
-     * @desc 相对于前一个行号的偏移量
-     * @remarks 必须大于等于0
-     * */
     line: number;
-
-    /**
-     * @summary 起始位置偏移量
-     * @desc 相对于该行起始位置的字符偏移量
-     * @remarks 同一行必须 ≥ 0，新行可 ≥ 0
-     * */
     start: number;
-
-    /**
-     * @summary 令牌长度
-     * @desc 令牌的字符长度
-     * */
     length: number;
-
-    /**
-     * @summary 令牌类型
-     * @desc 令牌类型在 legend.types 中的索引
-     * @remarks 从0开始
-     * */
     type: number;
-
-    /**
-     * @summary 修饰符位
-     * @desc 修饰符的位掩码
-     * @remarks 每个 bit 对应 legend.modifiers 中的一个修饰符,并且无论是语法修饰符还是语义修饰符都可以
-     * @example 0b01
-     * */
     modifierBits: number;
 }
 
@@ -143,6 +119,8 @@ export class SemanticCollector {
     private tokens: ISemanticToken[] = [];
     private latestPos: IPos = { line: 1, column: 1 };
 
+    /** 待输出的注释（按源码顺序），在遍历过程中按位置插入 */
+    private pendingComments: Comment[] = [];
 
     constructor(private readonly ast: Nullable<Program>, public debug: boolean = false) {
     }
@@ -154,7 +132,14 @@ export class SemanticCollector {
 
         let result: number[] = [];
 
+        this.pendingComments = [...(this.ast.comments ?? [])]
+            .sort((a, b) => a.pos.line - b.pos.line || a.pos.column - b.pos.column);
+
         this.visitProgram(this.ast);
+
+        // 收尾：输出剩余注释
+        while (this.pendingComments.length)
+            this.emitComment(this.pendingComments.shift()!);
 
         this.tokens.forEach(token => result = result.concat(
             [token.line, token.start, token.length, token.type, 0]
@@ -163,35 +148,58 @@ export class SemanticCollector {
         return result;
     }
 
-    @methodDebug(semanticDebug)
     private visitProgram(node: Program) {
+        // 语义令牌必须按源码顺序产出（相对行/列编码）；注释在 pushLeaf 中按位置插入
         node.statements.forEach(stmt => this.visitStatement(stmt));
     }
 
-    @methodDebug(semanticDebug)
+    /** 在输出 pos 位置的令牌前，先吐出所有位于它之前的注释 */
+    private flushCommentsBefore(pos: IPos) {
+        while (this.pendingComments.length) {
+            const comment = this.pendingComments[0];
+
+            if (comment.pos.line < pos.line || (comment.pos.line === pos.line && comment.pos.column <= pos.column))
+                this.emitComment(this.pendingComments.shift()!);
+            else
+                return;
+        }
+    }
+
+    private emitComment(comment: Comment) {
+        const gap = this.getGap(comment.pos);
+
+        this.tokens.push({
+            line: gap.line,
+            start: gap.column,
+            length: comment.value.length,
+            type: comment.nodeName === "CommenComment" ? TokenLegend.Comment : TokenLegend.ImportComment,
+            modifierBits: 0
+        });
+
+        this.latestPos = comment.pos;
+    }
+
     private visitStatement(node: Statement) {
         const methodName = `visit${node.nodeName}`;
 
         if (methodName in this)
             return (this[methodName as keyof SemanticCollector] as (node: AST) => void)(node);
 
-        else
-            console.warn(`No visitor method for ${node.nodeName} at visitStatement`);
+        console.warn(`No visitor method for ${node.nodeName} at visitStatement`);
     }
 
-    @methodDebug(semanticDebug)
     private visitAssignment(node: Assignment) {
         if (node.modifier)
             this.handleKeyword(node.marks.modifier!, true);
 
         this.visitIdentifier(node.name, TokenLegend.Variable);
 
-        this.handleKeyword(node.marks.is!);
+        if (node.marks.is?.value === "is")
+            this.handleKeyword(node.marks.is);
 
         this.visitExpression(node.value);
     }
 
-    @methodDebug(semanticDebug)
     private visitTemplateDef(node: TemplateDef) {
         if (node.modifier)
             this.handleKeyword(node.marks.modifier!, true);
@@ -204,12 +212,11 @@ export class SemanticCollector {
 
         this.handleKeyword(node.marks.is!);
 
-        this.visitIdentifier(node.extend, TokenLegend.Template);
+        this.visitTypeRef(node.extend);
 
         node.members.forEach(member => this.visitMemberAssign(member));
     }
 
-    @methodDebug(semanticDebug)
     private visitUnnamedObj(node: UnnamedObj) {
         this.handleKeyword(node.marks.unnamed!);
 
@@ -224,49 +231,21 @@ export class SemanticCollector {
         node.args.forEach(arg => this.visitArgument(arg));
     }
 
-    @methodDebug(semanticDebug)
+    /** 统一处理 Program.comments 里的注释（普通注释 / 文档注释） */
+    private visitCommentNode(node: Comment) {
+        this.pushLeaf(node.pos, node.value.length, TokenLegend.Comment, 0);
+    }
+
     private visitCommenComment(node: CommenComment) {
-        const gap = this.getGap(node.pos);
-
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: node.value.length,
-            type: TokenLegend.Comment,
-            modifierBits: 0
-        });
-
-        this.latestPos = node.pos;
+        this.pushLeaf(node.pos, node.value.length, TokenLegend.Comment, 0);
     }
 
-    @methodDebug(semanticDebug)
     private visitFileImportComment(node: FileImportComment) {
-        const gap = this.getGap(node.pos);
-
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: node.value.length,
-            type: TokenLegend.ImportComment,
-            modifierBits: 0
-        });
-
-        this.latestPos = node.pos;
+        this.pushLeaf(node.pos, node.value.length, TokenLegend.ImportComment, 0);
     }
 
-    @methodDebug(semanticDebug)
     private visitLibImportComment(node: LibImportComment) {
-        const gap = this.getGap(node.pos);
-
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: node.value.length,
-            type: TokenLegend.ImportComment,
-            modifierBits: 0
-        });
-
-        this.latestPos = node.pos;
+        this.pushLeaf(node.pos, node.value.length, TokenLegend.ImportComment, 0);
     }
 
     private visitParameterDecl(node: ParameterDecl) {
@@ -279,8 +258,10 @@ export class SemanticCollector {
             this.visitExpression(node.default);
     }
 
-    @methodDebug(semanticDebug)
     private visitMemberAssign(node: MemberAssign) {
+        if (node.modifier)
+            this.handleKeyword(node.marks.modifier!, true);
+
         this.visitIdentifier(node.name, TokenLegend.Property);
 
         if (node.operator === "is")
@@ -289,99 +270,63 @@ export class SemanticCollector {
         this.visitExpression(node.value);
     }
 
-    @methodDebug(semanticDebug)
     private visitTypeRef(node: TypeRef) {
-        const methodName = `visit${node.nodeName}`;
-
-        if (methodName in this)
-            return (this[methodName as keyof SemanticCollector] as (node: TypeRef) => void)(node);
-
-        else
-            console.warn(`No visitor method for ${node.nodeName} at visitTypeRef`);
-    }
-
-    @methodDebug(semanticDebug)
-    private visitBuiltinType(node: BuiltinType) {
-        const gap = this.getGap(node.pos);
-
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: node.name.length,
-            type: TokenLegend.Keyword,
-            modifierBits: 0
-        });
-
-        this.latestPos = node.pos;
-    }
-
-    @methodDebug(semanticDebug)
-    private visitGenericType(node: GenericType) {
         this.visitIdentifier(node.name, TokenLegend.Generic);
 
-        node.typeParams.forEach(typeParam => this.visitTypeRef(typeParam));
+        node.typeArgs.forEach(arg => this.visitTypeRef(arg));
+        node.annotations.forEach(annotation => this.visitTypeAnnotation(annotation));
     }
 
-    @methodDebug(semanticDebug)
+    private visitTypeAnnotation(node: TypeAnnotation) {
+        if (node.name)
+            this.visitIdentifier(node.name, TokenLegend.Property);
+
+        if (node.annotation)
+            this.visitTypeRef(node.annotation);
+
+        if (node.value)
+            this.visitExpression(node.value);
+    }
+
     private visitExpression(node: Expression) {
         const methodName = `visit${node.nodeName}`;
 
         if (methodName in this)
             return (this[methodName as keyof SemanticCollector] as (node: Expression) => void)(node);
 
-        else
-            console.warn(`No visitor method for ${node.nodeName} at visitExpression`);
+        console.warn(`No visitor method for ${node.nodeName} at visitExpression`);
     }
 
-    @methodDebug(semanticDebug)
-    private visitIdentifier(node: Identifier, type: TokenLegend) {
-        const gap = this.getGap(node.pos);
-
+    private visitIdentifier(node: Identifier, type?: TokenLegend) {
         if (!type)
             type = node.type instanceof TemplateType
                 ? TokenLegend.Template
-                 : node.type instanceof ObjectType
+                : node.type instanceof ObjectType
                     ? TokenLegend.Object
-                     : TokenLegend.Variable;
+                    : TokenLegend.Variable;
 
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: node.name.length,
-            type,
-            modifierBits: 0
-        });
-
-        this.latestPos = node.pos;
+        this.pushLeaf(node.pos, node.name.length, type, 0);
     }
 
-    @methodDebug(semanticDebug)
     private visitTernaryExpr(node: TernaryExpr) {
         this.visitExpression(node.condition);
-
         this.visitExpression(node.trueExpr);
-
         this.visitExpression(node.falseExpr);
     }
 
-    @methodDebug(semanticDebug)
     private visitBinaryExpr(node: BinaryExpr) {
         this.visitExpression(node.left);
-
         this.visitExpression(node.right);
     }
 
-    @methodDebug(semanticDebug)
     private visitUnaryExpr(node: UnaryExpr) {
         this.visitExpression(node.operand);
     }
 
-    @methodDebug(semanticDebug)
     private visitTemplateParam(node: TemplateParam) {
         this.visitIdentifier(node.name, TokenLegend.TemplateParam);
     }
 
-    @methodDebug(semanticDebug)
     private visitObjectCall(node: ObjectCall) {
         const type = node.blueprint.type instanceof TemplateType
             ? TokenLegend.Template
@@ -394,207 +339,127 @@ export class SemanticCollector {
         node.args.forEach(arg => this.visitArgument(arg));
     }
 
-    @methodDebug(semanticDebug)
     private visitIndexAccess(node: IndexAccess) {
         this.visitExpression(node.target);
-
-        this.visitExpression(node.index);
+        node.args.forEach(arg => this.visitExpression(arg));
     }
 
-    @methodDebug(semanticDebug)
-    private visitMemberAccess(ndoe: MemberAccess) {
-        this.visitExpression(ndoe.target);
-
-        this.visitIdentifier(ndoe.property, TokenLegend.Property);
+    private visitMemberAccess(node: MemberAccess) {
+        this.visitExpression(node.target);
+        this.visitIdentifier(node.property, TokenLegend.Property);
     }
 
-    @methodDebug(semanticDebug)
     private visitParenthesisExpr(node: ParenthesisExpr) {
         this.visitExpression(node.expr);
+
+        if (node.second)
+            this.visitExpression(node.second);
     }
 
-    @methodDebug(semanticDebug)
     private visitReference(node: Reference) {
-        // TODO: 更详细处理
-        const gap = this.getGap(node.pos);
-
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: node.path.length,
-            type: TokenLegend.Reference,
-            modifierBits: 0
-        });
-
-        this.latestPos = node.pos;
+        this.pushLeaf(node.pos, node.value.length, TokenLegend.Reference, 0);
     }
 
-    @methodDebug(semanticDebug)
     private visitGuidCall(node: GuidCall) {
-        const gap = this.getGap(node.pos);
-
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: node.uuid.length,
-            type: TokenLegend.UUID,
-            modifierBits: this.modifierToBits([TokenModifier.Readonly])
-        });
-
-        this.latestPos = node.pos;
+        this.pushLeaf(node.pos, node.uuid.length, TokenLegend.UUID, this.modifierToBits([TokenModifier.Readonly]));
     }
 
-    @methodDebug(semanticDebug)
     private visitMapDef(node: MapDef) {
         this.handleKeyword(node.marks.map!);
-
         node.pairs.forEach(pair => this.visitPair(pair));
     }
 
-    @methodDebug(semanticDebug)
     private visitPair(node: Pair) {
         this.visitExpression(node.key);
-
         this.visitExpression(node.value);
     }
 
-    @methodDebug(semanticDebug)
     private visitVectorDef(node: VectorDef) {
         node.elements.forEach(elem => this.visitExpression(elem));
     }
 
-    @methodDebug(semanticDebug)
-    private visitTypeConstructor(node: TypeConstructor) {
-        this.visitIdentifier(node.name, TokenLegend.Generic);
-
-        node.args.forEach(arg => this.visitExpression(arg));
-    }
-
-    @methodDebug(semanticDebug)
-    private visitPropertyAssignExpr(node: PropertyAssignExpr) {
-        if (node.modifier)
-            this.handleKeyword(node.marks.modifier!, true);
-
-        this.visitIdentifier(node.name, TokenLegend.Property);
-
-        this.visitExpression(node.value);
-    }
-
-    @methodDebug(semanticDebug)
-    private visitArgument(node: Argument) {
+    private visitDefinitionExpr(node: DefinitionExpr) {
         if (node.modifier)
             this.handleKeyword(node.marks.modifier!, true);
 
         this.visitIdentifier(node.name, TokenLegend.Property);
 
         if (node.operator === "is")
-            this.handleKeyword(node.marks.operator!);
+            this.handleKeyword(node.marks.is!);
+
+        this.visitExpression(node.value);
+    }
+
+    private visitArgument(node: Argument) {
+        if (node.modifier)
+            this.handleKeyword(node.marks.modifier!, true);
+
+        if (node.positional) {
+            if (node.value)
+                this.visitExpression(node.value);
+
+            return;
+        }
+
+        if (node.name)
+            this.visitIdentifier(node.name, TokenLegend.Property);
+
+        if (node.operator === "is" && node.marks.colonOrAssignOrIs)
+            this.handleKeyword(node.marks.colonOrAssignOrIs);
 
         if (node.annotation)
             this.visitTypeRef(node.annotation);
-        else
-            this.visitExpression(node.value!);
+
+        if (node.value)
+            this.visitExpression(node.value);
     }
 
-    @methodDebug(semanticDebug)
     private visitLiteral(node: Literal) {
         const methodName = `visit${node.nodeName}`;
 
         if (methodName in this)
             return (this[methodName as keyof SemanticCollector] as (node: Literal) => void)(node);
 
-        else
-            console.warn(`No visitor method for ${node.nodeName} at visitLiteral`);
+        console.warn(`No visitor method for ${node.nodeName} at visitLiteral`);
     }
 
-    @methodDebug(semanticDebug)
     private visitStr(node: Str) {
-        const gap = this.getGap(node.pos);
-
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: node.value.length,
-            type: TokenLegend.String,
-            modifierBits: this.modifierToBits([TokenModifier.Readonly])
-        });
-
-        this.latestPos = node.pos;
+        this.pushLeaf(node.pos, node.value.length, TokenLegend.String, this.modifierToBits([TokenModifier.Readonly]));
     }
 
-    @methodDebug(semanticDebug)
     private visitInteger(node: Integer) {
-        const gap = this.getGap(node.pos);
-
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: node.value.length,
-            type: TokenLegend.Number,
-            modifierBits: this.modifierToBits([TokenModifier.Readonly])
-        });
-
-        this.latestPos = node.pos;
+        this.pushLeaf(node.pos, node.value.length, TokenLegend.Number, this.modifierToBits([TokenModifier.Readonly]));
     }
 
-    @methodDebug(semanticDebug)
     private visitFloat(node: Float) {
-        const gap = this.getGap(node.pos);
-
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: node.value.length,
-            type: TokenLegend.Number,
-            modifierBits: this.modifierToBits([TokenModifier.Readonly])
-        });
-
-        this.latestPos = node.pos;
+        this.pushLeaf(node.pos, node.value.length, TokenLegend.Number, this.modifierToBits([TokenModifier.Readonly]));
     }
 
-    @methodDebug(semanticDebug)
     private visitBool(node: Bool) {
-        const gap = this.getGap(node.pos);
-
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: node.value.length,
-            type: TokenLegend.Keyword,
-            modifierBits: 0
-        });
-
-        this.latestPos = node.pos;
+        this.pushLeaf(node.pos, node.value.length, TokenLegend.Keyword, 0);
     }
 
-    @methodDebug(semanticDebug)
     private visitNil(node: Nil) {
-        const gap = this.getGap(node.pos);
-
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: 3,
-            type: TokenLegend.Keyword,
-            modifierBits: 0
-        });
-
-        this.latestPos = node.pos;
+        this.pushLeaf(node.pos, 3, TokenLegend.Keyword, 0);
     }
 
-    @methodDebug(semanticDebug)
     private handleKeyword(token: Token, isModifier: boolean = false) {
-        const gap = this.getGap(token.pos);
+        this.pushLeaf(
+            token.pos,
+            token.value.length,
+            TokenLegend.Keyword,
+            isModifier ? this.modifierToBits([this.modifierToToken(token.value as ModifierType)!]) : 0
+        );
+    }
 
-        this.tokens.push({
-            line: gap.line,
-            start: gap.column,
-            length: token.value.length,
-            type: TokenLegend.Keyword,
-            modifierBits: isModifier ? this.modifierToBits([this.modifierToToken(token.value as ModifierType)!]) : 0
-        });
+    private pushLeaf(pos: IPos, length: number, type: TokenLegend, modifierBits: number) {
+        this.flushCommentsBefore(pos);
 
-        this.latestPos = token.pos;
+        const gap = this.getGap(pos);
+
+        this.tokens.push({ line: gap.line, start: gap.column, length, type, modifierBits });
+
+        this.latestPos = pos;
     }
 
     private modifierToBits(modifiers: TokenModifier[]): number {
@@ -625,3 +490,6 @@ export class SemanticCollector {
         return { line: lineGap, column: lineGap <= 0 ? pos.column - this.latestPos.column : pos.column - 1 };
     }
 }
+
+
+

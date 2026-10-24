@@ -1,201 +1,199 @@
 {
 	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
 	"name": "NDF",
+	"scopeName": "source.ndf",
 	"patterns": [
-		{
-			"include": "#comments"
-		},
-		{
-			"include": "#literals"
-		},
-		{
-			"include": "#variable.other"
-		},
-		{
-			"include": "#keywords"
-		},
-		{
-			"include": "#operators"
-		},
-		{
-			"include": "#expressions"
-		}
+		{ "include": "#comments" },
+		{ "include": "#guid" },
+		{ "include": "#strings" },
+		{ "include": "#references" },
+		{ "include": "#numbers" },
+		{ "include": "#template-parameters" },
+		{ "include": "#keywords" },
+		{ "include": "#soft-keywords" },
+		{ "include": "#operators" }
 	],
 	"repository": {
-		"keywords": {
-			"patterns": [
-				{
-					"name": "keyword.control.ndf",
-					"match": "\\b(private|public|export|template|is|unnamed|div|MAP|GUID|true|false|nil)\\b"
-				}
-			]
-		},
-		"operators": {
-			"patterns": [
-				{
-					"name": "keyword.operator.ndf",
-					"match": "(\\||&|==|!=|<=|>=|<|>|\\+|-|\\*|/|=|\\?|:|\\.|\\$|~|%)"
-				}
-			]
-		},
-		"literals": {
-			"patterns": [
-				{
-					"name": "constant.numeric.ndf",
-					"match": "\\b\\d+(\\.\\d+)?\\b"
-				},
-				{
-					"name": "constant.language.ndf",
-					"match": "\\b(true|false|nil|int|float|bool|string)\\b"
-				},
-				{
-					"name": "string.quoted.double.ndf",
-					"begin": "\"",
-					"end": "\"",
-					"patterns": [
-						{
-							"name": "constant.character.escape.ndf",
-							"match": "\"\""
-						}
-					]
-				},
-				{
-					"name": "string.quoted.single.ndf",
-					"begin": "'",
-					"end": "'",
-					"patterns": [
-						{
-							"name": "constant.character.escape.single.ndf",
-							"match": "''"
-						}
-					]
-				},
-				{
-					"name": "constant.other.guid.ndf",
-					"match": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
-					"captures": {
-						"0": {
-							"name": "constant.other.guid.ndf"
-						}
-					}
-				}
-			]
-		},
-		"expressions": {
-			"patterns": [
-				{
-					"name": "entity.name.function.ndf",
-					"match": "(?<=template\\s+)\\w+"
-				},
-				{
-					"patterns": [
-						{
-							"name": "variable.parameter.ndf",
-							"match": "(?<=<)\\w+(?=>)"
-						},
-						{
-							"name": "variable.constant.ndf",
-							"match": "(?<![/$~.])\\b[A-Z][A-Z0-9_]*\\b"
-						}
-					]
-				},
-				{
-					"begin": "\\[",
-					"end": "\\]",
-					"name": "meta.vector.ndf",
-					"patterns": [
-						{
-							"include": "#comments"
-						},
-						{
-							"include": "#literals"
-						},
-						{
-							"include": "#expressions"
-						}
-					]
-				},
-				{
-					"begin": "MAP\\s*\\[",
-					"end": "\\]",
-					"name": "meta.map.ndf",
-					"patterns": [
-						{
-							"include": "#comments"
-						},
-						{
-							"include": "#literals"
-						},
-						{
-							"begin": "\\(",
-							"end": "\\)",
-							"name": "meta.pair.ndf",
-							"patterns": [
-								{
-									"include": "#comments"
-								},
-								{
-									"include": "#literals"
-								},
-								{
-									"include": "#expressions"
-								}
-							]
-						}
-					]
-				}
-			]
-		},
-		"variable.other.ndf": {
-			"name": "variable.other.ndf",
-			"match": "([$~.])[\\w/]+",
-			"captures": {
-				"1": {
-					"name": "keyword.operator.ndf"
-				}
-			}
-		},
 		"comments": {
 			"patterns": [
+				{
+					"name": "comment.line.documentation.ndf",
+					"match": "///.*$",
+					"captures": {
+						"0": { "name": "comment.line.documentation.ndf" }
+					}
+				},
 				{
 					"name": "comment.block.documentation.ndf",
 					"begin": "/\\*\\*",
 					"end": "\\*/",
-					"patterns": [
-						{
-							"include": "#docTags"
-						},
-						{
-							"include": "#comments"
-						}
-					]
+					"patterns": [ { "include": "#comments" } ]
 				},
 				{
 					"name": "comment.line.double-slash.ndf",
-					"match": "//.*"
+					"match": "//.*$"
 				},
 				{
 					"name": "comment.block.paren-star.ndf",
 					"begin": "\\(\\*",
 					"end": "\\*\\)",
-					"patterns": [
-						{
-							"include": "#comments"
-						}
-					]
+					"patterns": [ { "include": "#comments" } ]
 				},
 				{
 					"name": "comment.block.ndf",
 					"begin": "/\\*",
 					"end": "\\*/",
+					"patterns": [ { "include": "#comments" } ]
+				}
+			]
+		},
+
+		"guid": {
+			"patterns": [
+				{
+					"name": "meta.guid.ndf",
+					"match": "\\b(GUID)\\s*(:)\\s*(\\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\})",
+					"captures": {
+						"1": { "name": "keyword.other.guid.ndf" },
+						"2": { "name": "keyword.operator.ndf" },
+						"3": { "name": "constant.other.guid.ndf" }
+					}
+				},
+				{
+					"name": "constant.other.guid.ndf",
+					"match": "\\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\}"
+				}
+			]
+		},
+
+		"strings": {
+			"patterns": [
+				{
+					"name": "string.quoted.double.ndf",
+					"begin": "\"",
+					"end": "\"|$",
 					"patterns": [
-						{
-							"include": "#comments"
-						}
+						{ "name": "invalid.illegal.newline.ndf", "match": "\\n" }
+					]
+				},
+				{
+					"name": "string.quoted.single.ndf",
+					"begin": "'",
+					"end": "'|$",
+					"patterns": [
+						{ "name": "invalid.illegal.newline.ndf", "match": "\\n" }
 					]
 				}
 			]
+		},
+
+		"references": {
+			"patterns": [
+				{
+					"name": "meta.reference.rooted.ndf",
+					"match": "([$~])((?:\\s*/\\s*[A-Za-z_][A-Za-z0-9_]*)+)",
+					"captures": {
+						"1": { "name": "keyword.operator.reference.ndf" },
+						"2": { "name": "variable.other.reference.ndf" }
+					}
+				},
+				{
+					"name": "meta.reference.relative.ndf",
+					"match": "(/)\\s*([A-Za-z_][A-Za-z0-9_]*)",
+					"captures": {
+						"1": { "name": "keyword.operator.reference.ndf" },
+						"2": { "name": "variable.other.enum.ndf" }
+					}
+				},
+				{
+					"name": "meta.member-access.ndf",
+					"match": "(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)",
+					"captures": {
+						"1": { "name": "keyword.operator.member.ndf" },
+						"2": { "name": "variable.other.property.ndf" }
+					}
+				}
+			]
+		},
+
+		"numbers": {
+			"patterns": [
+				{
+					"name": "constant.numeric.hex.ndf",
+					"match": "(?<![A-Za-z0-9_])0[xX][0-9a-fA-F]+"
+				},
+				{
+					"name": "constant.numeric.float.ndf",
+					"match": "(?<![A-Za-z0-9_.])(?:[0-9]+\\.[0-9]*|\\.[0-9]+)(?![A-Za-z0-9_.])"
+				},
+				{
+					"name": "constant.numeric.integer.ndf",
+					"match": "(?<![A-Za-z0-9_.])[0-9]+(?![A-Za-z0-9_.])"
+				}
+			]
+		},
+
+		"template-parameters": {
+			"patterns": [
+				{
+					"name": "meta.template-parameter.ndf",
+					"match": "<\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*>",
+					"captures": {
+						"0": { "name": "variable.parameter.template.ndf" }
+					}
+				}
+			]
+		},
+
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.control.ndf",
+					"match": "\\b(export|private|public|template|unnamed|is|nil|div)\\b"
+				},
+				{
+					"name": "constant.language.boolean.ndf",
+					"match": "\\b(true|false|True|False)\\b"
+				}
+			]
+		},
+
+		"soft-keywords": {
+			"patterns": [
+				{
+					"name": "entity.name.type.container.ndf",
+					"match": "\\b(MAP|LIST|List|PAIR)\\b"
+				},
+				{
+					"name": "storage.type.builtin.ndf",
+					"match": "\\b(int|integer|int2|int3|int4|float|single|float2|float3|float4|string|bool|boolean|color|RGB|RGBA)\\b"
+				},
+				{
+					"name": "support.constant.annotation.ndf",
+					"match": "\\b(required|GroupBy|Values|Enum)\\b"
+				},
+				{
+					"name": "keyword.other.guid.ndf",
+					"match": "\\bGUID\\b"
+				}
+			]
+		},
+
+		"operators": {
+			"patterns": [
+				{
+					"name": "keyword.operator.comparison.ndf",
+					"match": "==|!=|<=|>="
+				},
+				{
+					"name": "keyword.operator.ndf",
+					"match": "[|&<>+\\-*/%?:=!$~]"
+				},
+				{
+					"name": "punctuation.ndf",
+					"match": "[()\\[\\]{},.;]"
+				}
+			]
 		}
-	},
-	"scopeName": "source.ndf"
+	}
 }

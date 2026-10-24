@@ -9,3 +9,5 @@ scripts
 .idea
 
 */test.json
+
+*.vsix
