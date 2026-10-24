@@ -10,10 +10,27 @@
 /**
  * @file ast.ts
  * @author edocsitahw
- * @version 1.1
- * @date 2025/04/17 20:12
- * @desc
+ * @version 2.0
+ * @date 2025/04/25 00:06
+ * @desc NDF 抽象语法树节点（NDF 语法 v2）
  * @copyright CC BY-NC-SA 2025. All rights reserved.
+ *
+ * @remarks
+ * 本文件的节点集合与 `NDF.g4` v2.0 的产生式一一对应：
+ *
+ * ```
+ * program        : statement* EOF
+ * statement      : templateDefinition | unnamedInstantiation | definition
+ * definition     : modifier? name ('is' | '=') value
+ * value          : definition | expression
+ * templateDefinition : modifier? 'template' name templateParameterList 'is' typeRef objectBody
+ * unnamedInstantiation : 'unnamed' name objectBody
+ * typeRef        : typeName typeArgumentList? typeParameterList?
+ * objectBody     : '(' (bodyItem (','? bodyItem)* ','?)? ')'
+ * ```
+ *
+ * 节点与 v1 的差异见 `types/ast.ts` 的说明。每个节点都用 `marks` 保存**原始令牌**，
+ * 供格式化器/语义高亮还原位置与布局。
  * */
 import {
     BaseType,
@@ -24,9 +41,8 @@ import {
     IAST,
     IBinaryExpr,
     IBoolean,
-    IBuiltinType,
+    IDefinitionExpr,
     IFloat,
-    IGenericType,
     IGuidCall,
     IIdentifier,
     IIndexAccess,
@@ -34,29 +50,27 @@ import {
     IInternalExpression,
     IInternalNode,
     IInternalStatement,
-    IInternalTypeRef,
     ILeafExpression,
     ILeafNode,
     ILeafStatement,
-    ILeafTypeRef,
     ILiteral,
     IMapDef,
+    IMemberAccess,
     IMemberAssign,
     INil,
     IObjectCall,
     IPair,
     IParameterDecl,
     IParenthesisExpr,
-    IMemberAccess,
     IPos,
     IProgram,
-    IPropertyAssignExpr,
     IReference,
     IStr,
     ITemplateDef,
     ITemplateParam,
     ITernaryExpr,
-    ITypeConstructor,
+    ITypeAnnotation,
+    ITypeRef,
     IUnaryExpr,
     IUnnamedObj,
     IVectorDef,
@@ -70,100 +84,57 @@ import {
     ILibImportComment,
     ICommonComment,
     IUnnamedObjMark,
-    IPropertyAssignMark,
+    IDefinitionExprMark,
     IArgumentMark,
     IMapDefMark,
-    Optional,
-    IParameterDeclMark,
-    IBuiltinTypeMark,
-    IGenericTypeMark,
-    ILeafTypeRefMark,
-    IInternalTypeRefMark,
-    ILeafExpressionMark,
-    IInternalExpressionMark,
-    IIdentifierMark,
-    IUnaryExprMark,
-    IBinaryExprMark,
-    ITernaryExprMark,
-    ITemplateParamMark,
-    IObjectCallMark,
+    IPairMark,
+    IVectorDefMark,
+    ITypeRefMark,
+    ITypeAnnotationMark,
     IIndexAccessMark,
     IMemberAccessMark,
-    IParenthesisExprMark,
     IReferenceMark,
     IGuidCallMark,
-    IPairMark,
-    IVectorDefMark, ITypeConstructorMark, ILeafNodeMark, IInternalNodeMark
+    IParenthesisExprMark,
+    ITernaryExprMark,
+    IBinaryExprMark,
+    IUnaryExprMark,
+    ITemplateParamMark,
+    IObjectCallMark,
+    IIdentifierMark,
+    ILiteral as ILiteralIface,
+    ILeafNodeMark,
+    IInternalNodeMark,
+    ILeafExpressionMark,
+    IInternalExpressionMark,
+    IParameterDeclMark,
+    Optional
 } from "../types";
 import { Token } from "../lexer";
 
 
-export type ASTWithBelong = Argument | UnnamedObj | TemplateDef | MemberAssign | ParameterDecl | Assignment;
+export type ASTWithBelong = Argument | UnnamedObj | TemplateDef | MemberAssign | ParameterDecl | Assignment | DefinitionExpr | TypeRef;
 
 
 /**
  * @class AST
- * @classDesc NDF的抽象语法树节点基类
- * @desc 该类是所有NDF抽象语法树节点的基类，提供了一些公共的属性和方法，包括节点名称、位置、类型、子节点等。
- * @property {string} _nodeName - 节点名称，用于标识节点类型。
+ * @classDesc NDF 抽象语法树节点基类
+ * @desc 提供 `nodeName`、`pos`、`type`、`length` 等公共能力
  * @abstract
  * */
 export abstract class AST implements IAST {
-    /**
-     * @var _nodeName
-     * @summary 节点名称，用于标识节点类型。
-     * @desc 该属性是所有NDF抽象语法树节点的基类，用于标识节点类型。
-     * @access protected
-     * @abstract
-     * @remarks 该属性是预定义的,不可修改。
-     * */
     protected abstract _nodeName: string;
 
-    /**
-     * @var pos
-     * @summary 节点位置信息。
-     * @desc 该属性记录了节点在源代码中的位置信息，包括行号和列号。
-     * @abstract
-     * @see IPos
-     * */
     abstract pos: IPos;
 
-    /**
-     * @var type
-     * @summary 节点类型信息。
-     * @desc 该属性记录了节点的类型信息，包括基础类型、模板类型、自定义类型等。
-     * @abstract
-     * @see IType
-     * @remarks 在语义分析阶段，该属性会被赋值为具体的类型信息。
-     * */
     abstract type: IType;
 
-    /**
-     * @var nodeName
-     * @summary 节点名称。
-     * @desc 节点名称对应于节点的类型，用于标识节点的具体类型。
-     * @readonly
-     * */
     get nodeName(): string {
         return this._nodeName;
     }
 
-    /**
-     * @method toJSON
-     * @summary 序列化节点。
-     * @desc 该方法用于将节点序列化为JSON格式，方便存储和传输。
-     * @returns {object} 序列化后的JSON对象。
-     * @abstract
-     * */
     abstract toJSON(): object;
 
-    /**
-     * @method toString
-     * @summary 打印节点。
-     * @desc 该方法用于将节点打印为字符串，方便调试。
-     * @returns {string} 节点的字符串表示。
-     * @abstract
-     * */
     abstract toString(): string;
 
     abstract get length(): number;
@@ -174,7 +145,7 @@ export abstract class AST implements IAST {
                 return arg.length;
 
             else if (Array.isArray(arg))
-                return arg.map(i => this._length(i)).reduce((a, b) => a + b);
+                return arg.map(i => this._length(i)).reduce((a, b) => a + b, 0);
 
             else
                 return 0;
@@ -185,21 +156,10 @@ export abstract class AST implements IAST {
 
 /**
  * @class LeafNode
- * @classDesc NDF的叶子节点基类
- * @desc 所有叶子节点都继承自该类
+ * @classDesc 叶子节点基类
  * @abstract
- * @extends AST
- * @see AST
- * @remarks 一般需要遍历节点的时候,会涉及此类.
  * */
 export abstract class LeafNode extends AST implements ILeafNode {
-    /**
-     * @var value
-     * @summary 节点值。
-     * @desc 该属性记录了节点的值，用于表示节点的具体内容。
-     * @return {string} 节点值。
-     * @abstract
-     * */
     abstract get value(): string;
 
     abstract marks: ILeafNodeMark;
@@ -208,21 +168,10 @@ export abstract class LeafNode extends AST implements ILeafNode {
 
 /**
  * @class InternalNode
- * @classDesc NDF的内部节点基类
- * @desc 所有内部节点都继承自该类
+ * @classDesc 内部节点基类
  * @abstract
- * @extends AST
- * @see AST
- * @remarks 一般需要遍历节点的时候,会涉及此类.
  * */
 export abstract class InternalNode extends AST implements IInternalNode {
-    /**
-     * @var children
-     * @summary 节点子节点。
-     * @desc 该属性记录了节点的子节点，用于表示节点的结构。
-     * @return {Node[]} 节点子节点。
-     * @abstract
-     * */
     abstract get children(): Node[];
 
     abstract marks: IInternalNodeMark;
@@ -231,30 +180,16 @@ export abstract class InternalNode extends AST implements IInternalNode {
 
 /**
  * @class Program
- * @classDesc NDF的程序节点
- * @desc 该类表示NDF的程序节点，用于表示整个程序的结构。
- * @extends InternalNode
- * @remarks 语法结构:
- * ```antlr4
- * Program : Statement* EOF ;
- * ```
- * 对应属性:
- * ```
- * Program : statements ;
- * ```
- * @see InternalNode
- * @see Statement
+ * @classDesc 程序节点
+ * @remarks `program : statement* EOF`
  * */
 export class Program extends InternalNode implements IProgram {
     protected _nodeName: string = "Program";
 
-    /**
-     * @var statements
-     * @summary 程序语句。
-     * @desc 该属性记录了程序的语句，用于表示程序的结构。
-     * @return {Statement[]} 程序语句。
-     * */
     statements: Statement[] = [];
+
+    /** 非语句层注释：供语义高亮遍历，不参与语句结构 */
+    comments: Comment[] = [];
 
     marks: IInternalNodeMark = {};
 
@@ -285,27 +220,11 @@ export class Program extends InternalNode implements IProgram {
 }
 
 
-/**
- * @class LeafStatement
- * @classDesc 叶子节点类型的语句节点基类
- * @desc 该类是所有叶子节点类型的语句节点的基类，提供了一些公共的属性和方法，包括节点名称、位置、类型、子节点等。
- * @abstract
- * @extends LeafNode
- * @see LeafNode
- * */
 export abstract class LeafStatement extends LeafNode implements ILeafStatement {
     abstract get value(): string;
 }
 
 
-/**
- * @class InternalStatement
- * @classDesc 内部节点类型的语句节点基类
- * @desc 该类是所有内部节点类型的语句节点的基类，提供了一些公共的属性和方法，包括节点名称、位置、类型、子节点等。
- * @abstract
- * @extends InternalNode
- * @see InternalNode
- * */
 export abstract class InternalStatement extends InternalNode implements IInternalStatement {
     abstract get children(): Node[];
 }
@@ -313,70 +232,39 @@ export abstract class InternalStatement extends InternalNode implements IInterna
 
 /**
  * @type Statement
- * @summary 语句节点类型。
- * @desc 该类型表示NDF的语句节点，用于表示程序的结构。
- * @see LeafStatement
- * @see InternalStatement
- * @remarks 语法结构:
- * ```antlr4
- * Statement : Assignment | TemplateDef | UnnamedObj | Comment ;
- * ```
+ * @remarks `statement : templateDefinition | unnamedInstantiation | definition`
  * */
 export type Statement = LeafStatement | InternalStatement;
 
 
 /**
  * @class Assignment
- * @classDesc 赋值语句节点
- * @desc 该类表示NDF的赋值语句节点，用于表示变量的赋值。
- * @extends InternalStatement
- * @see InternalStatement
- * @see Identifier
- * @see Expression
- * @remarks 语法结构:
- * ```antlr4
- * Assignment : ('private' | 'export' | 'public')? Identifier 'is' Expression ;
- * ```
- * 对应属性:
- * ```
- * Assignment : marks.modifier name marks.is value ;
- * ```
+ * @classDesc 顶层定义语句
+ * @remarks `definition : modifier? name ('is' | '=') value`
+ * @example `export Descriptor_Unit_X is TEntityDescriptor ( … )`
  * */
 export class Assignment extends InternalStatement implements IAssignment {
     protected _nodeName: string = "Assignment";
 
-    /**
-     * @var modifier
-     * @summary 赋值语句修饰符。
-     * @desc 该属性记录了赋值语句的修饰符，用于表示变量的访问权限。
-     * @return {string} 赋值语句修饰符。
-     * */
     modifier: Nullable<"export" | "private" | "public">;
 
-    /**
-     * @var name
-     * @summary 赋值语句左值。
-     * @desc 该属性记录了赋值语句的左值，用于表示变量的名称。
-     * @return {Identifier} 赋值语句左值。
-     * */
     name: Identifier = DEFAULT_IDENTIFIER;
 
-    /**
-     * @var value
-     * @summary 赋值语句右值。
-     * @desc 该属性记录了赋值语句的右值，用于表示变量的值。
-     * @return {Expression} 赋值语句右值。
-     * */
     value: Expression = DEFAULT_IDENTIFIER;
+
     marks: IAssignMark = {};
 
     type: IType = { type: BaseType.UNNEEDED };
 
-    constructor(public pos: IPos) {
+    constructor(public pos: IPos, public readonly belong?: ASTWithBelong) {
         super();
     }
 
-    get children(): Statement[] {
+    get operator(): "is" | "=" {
+        return this.marks.is?.value === "=" ? "=" : "is";
+    }
+
+    get children(): (Identifier | Expression)[] {
         return [this.name, this.value];
     }
 
@@ -389,104 +277,65 @@ export class Assignment extends InternalStatement implements IAssignment {
             nodeName: this._nodeName,
             modifier: this.modifier,
             name: this.name.toJSON(),
+            operator: this.operator,
             value: this.value.toJSON(),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return [
-            this.modifier ? `${this.modifier} ` : "",
-            this.name.toString(),
-            " is ",
-            this.value.toString()
-        ].join("");
+        return `${this.modifier ? `${this.modifier} ` : ""}${this.name.toString()} ${this.operator} ${this.value.toString()}`;
     }
 }
 
 
 /**
  * @class TemplateDef
- * @classDesc 模板定义语句节点
- * @desc 该类表示NDF的模板定义语句节点，用于表示模板的定义。
- * @extends InternalStatement
- * @see InternalStatement
- * @see Identifier
- * @see ParameterDecl
- * @see MemberAssign
- * @remarks 语法结构:
- * ```antlr4
- * TemplateDef : 'private'? 'template' Identifier Divider* ParameterBlock Divider* 'is' Divider* Identifier Divider* MemberBlock;
- *
- * ParameterBlock : '[' ParameterDecl (',' ParameterDecl)* | Empty ']';
- *
- * MemberBlock : '(' Divider* MemberAssign* ')';
- *
- * Divider : Newline | Comment;
+ * @classDesc 模板定义
+ * @remarks `templateDefinition : modifier? 'template' name templateParameterList 'is' typeRef objectBody`
+ * @example
  * ```
- * 对应属性:
- * ```
- * TemplateDef : marks.modifier marks.template name comments1 marks.leftBracket params marks.rightBracket comments2 marsk.is comments3 extend comments4 marks.leftParen comments5 members marks.rightParen;
+ * template Character [ Name : string, Level : int = 1 ] is TCharacter (
+ *     Name = <Name>
+ * )
  * ```
  * */
 export class TemplateDef extends InternalStatement implements ITemplateDef {
     protected _nodeName: string = "TemplateDef";
 
-    /**
-     * @var modifier
-     * @summary 模板定义语句修饰符。
-     * @desc 该属性记录了模板定义语句的修饰符，用于表示模板的访问权限。
-     * @return {string} 模板定义语句修饰符。
-     * */
-    modifier: Nullable<"private">;
+    modifier: Nullable<"export" | "private" | "public">;
 
-    /**
-     * @var name
-     * @summary 模板定义语句名称。
-     * @desc 该属性记录了模板定义语句的名称，用于表示模板的名称。
-     * @return {Identifier} 模板定义语句名称。
-     * */
     name: Identifier = DEFAULT_IDENTIFIER;
-    comments1: Comment[] = [];  // 名称尾随注释
+
+    comments1: Comment[] = [];           // 名字后、参数块前
     params: ParameterDecl[] = [];
-    comments2: Comment[] = [];  // 中括号尾随注释
-    comments3: Comment[] = [];  // 当存在尾随逗号且其后尾随注释时，其注释没有ParameterDecl来记录，因此需要单独记录
-    comments4: Comment[] = [];  // is尾随注释
-    extend: Identifier = DEFAULT_IDENTIFIER;
-    comments5: Comment[] = [];  // 基模板尾随注释
-    comments6: Comment[] = [];  // 左括号尾随注释
+    separatorComments1: Comment[] = [];  // 参数块内、`]` 前
+    comments2: Comment[] = [];           // `]` 与 `is` 之间
+    comments3: Comment[] = [];           // `is` 与类型之间
+    extend: TypeRef = DEFAULT_TYPEREF;
+    comments4: Comment[] = [];           // 类型与 `(` 之间
+    comments5: Comment[] = [];           // `(` 之后
     members: MemberAssign[] = [];
 
     marks: ITemplateDefMark = {};
 
-    type: IType = { type: BaseType.TEMPLATE, name: this.name.toString() };
+    type: IType = { type: BaseType.UNNEEDED };
 
     constructor(public pos: IPos) {
         super();
     }
 
-    get children(): (Identifier | ParameterDecl[] | MemberAssign[])[] {
-        return [this.name, this.params, this.extend, this.members];
+    get children(): Node[] {
+        return [this.name, this.comments1, this.params, this.comments2, this.comments3, this.extend,
+            this.comments4, this.comments5, this.members];
     }
 
     get length(): number {
         return this._length(
-            this.marks.modifier,
-            this.name,
-            this.comments1,
-            this.marks.leftBracket,
-            this.params,
-            this.marks.rightBracket,
-            this.comments2,
-            this.marks.is,
-            this.comments3,
-            this.extend,
-            this.comments4,
-            this.marks.leftParen,
-            this.comments5,
-            this.members,
-            this.marks.rightParen,
-            this.comments6
+            this.marks.modifier, this.marks.template, this.name, this.comments1,
+            this.marks.leftBracket, this.params, this.separatorComments1, this.marks.rightBracket,
+            this.comments2, this.marks.is, this.comments3, this.extend, this.comments4,
+            this.marks.leftParen, this.comments5, this.members, this.marks.rightParen
         );
     }
 
@@ -495,74 +344,49 @@ export class TemplateDef extends InternalStatement implements ITemplateDef {
             nodeName: this._nodeName,
             modifier: this.modifier,
             name: this.name.toJSON(),
-            comments1: this.comments1.map(c => c.toJSON()),
             params: this.params.map(param => param.toJSON()),
-            comments2: this.comments2.map(c => c.toJSON()),
-            comments3: this.comments3.map(c => c.toJSON()),
-            comments4: this.comments4.map(c => c.toJSON()),
             extend: this.extend.toJSON(),
-            comments5: this.comments5.map(c => c.toJSON()),
-            comments6: this.comments6.map(c => c.toJSON()),
             members: this.members.map(member => member.toJSON()),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `${this.modifier ? `${this.modifier} ` : ""}template ${this.name.toString()}
-        ${this.comments1.map(comment => comment.toString())}[${this.params.join(",")}]${this.comments2.map(comment => comment.toString())}is${this.extend.toString()}${this.comments3.map(comment => comment.toString())}(${this.members.join(" ")})`;
+        return `${this.modifier ? `${this.modifier} ` : ""}template ${this.name.toString()} [...] is ${this.extend.toString()} (...)`;
     }
 }
 
 
 /**
  * @class UnnamedObj
- * @classDesc 匿名对象定义语句节点
- * @desc 该类表示NDF的匿名对象定义语句节点，用于表示匿名对象。
- * @extends InternalStatement
- * @see InternalStatement
- * @see Identifier
- * @see ObjectCall
- * @see Comment
- * @remarks 语法结构:
- * ```antlr4
- * UnnamedObj : 'unnamed' Identifier Divider* ObjectCall;
- *
- * Divider : Newline | Comment;
- * ```
- * 对应属性:
- * ```
- * UnnamedObj : marks.unnamed blueprint comments1 marks.leftParen comments2 args marks.rightParen;
- * ```
+ * @classDesc 无名对象（只能出现在顶层）
+ * @remarks `unnamedInstantiation : 'unnamed' name objectBody`
  * */
 export class UnnamedObj extends InternalStatement implements IUnnamedObj {
     protected _nodeName: string = "UnnamedObj";
 
     blueprint: Identifier = DEFAULT_IDENTIFIER;
-    comments1: Comment[] = [];  // 蓝图尾随注释
-    comments2: Comment[] = [];  // 左括号尾随注释
+
+    comments1: Comment[] = [];
+    comments2: Comment[] = [];
     args: Argument[] = [];
 
-    type: IType = { type: BaseType.UNNEEDED };
     marks: IUnnamedObjMark = {};
+
+    type: IType = { type: BaseType.UNNEEDED };
 
     constructor(public pos: IPos) {
         super();
     }
 
-    get children(): (Identifier | Argument[])[] {
-        return [this.blueprint, this.args];
+    get children(): (Identifier | Comment[] | Argument[])[] {
+        return [this.blueprint, this.comments1, this.comments2, this.args];
     }
 
     get length(): number {
         return this._length(
-            this.marks.unnamed,
-            this.blueprint,
-            this.comments1,
-            this.marks.leftParen,
-            this.comments2,
-            this.args,
-            this.marks.rightParen
+            this.marks.unnamed, this.blueprint, this.comments1,
+            this.marks.leftParen, this.comments2, this.args, this.marks.rightParen
         );
     }
 
@@ -570,47 +394,29 @@ export class UnnamedObj extends InternalStatement implements IUnnamedObj {
         return {
             nodeName: this._nodeName,
             blueprint: this.blueprint.toJSON(),
-            comments1: this.comments1.map(c => c.toJSON()),
-            comments2: this.comments2.map(c => c.toJSON()),
-            args: this.args.map(a => a.toJSON()),
+            args: this.args.map(arg => arg.toJSON()),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `unnamed ${this.blueprint.toString()} (${this.args.join("\n")})`;
+        return `unnamed ${this.blueprint.toString()} (...)`;
     }
 }
 
 
 /**
  * @class Comment
- * @classDesc 注释语句节点
- * @desc 该类表示NDF的注释语句节点，用于表示注释。
- * @abstract
- * @extends LeafStatement
- * @see LeafStatement
- * @remarks 语法结构:
- * ```antlr4
- * Comment : FileImportComment | LibImportComment | CommenComment ;
- * ```
+ * @classDesc 注释语句基类
+ * @remarks 注释在 v2 语法里属于 HIDDEN 通道；AST 仍保留它们，因为
+ * - `///` 承载本插件的 import 指令（工具层语义）；
+ * - 格式化器需要还原注释与空行。
  * */
 export abstract class Comment extends LeafStatement implements IComment {
     abstract trailingNewLines: number;
 }
 
 
-/**
- * @class FileImportComment
- * @classDesc 文件导入注释语句节点
- * @desc 该类表示NDF的文件导入注释语句节点，用于表示文件导入。注意，这不是标准NDF语法的一部分。
- * @extends Comment
- * @see Comment
- * @remarks 语法结构:
- * ```antlr4
- * FileImportComment : '///' 'from' StringLiteral 'import' Identifier (',' Identifier)* ;
- * ```
- * */
 export class FileImportComment extends Comment implements IFileImportComment {
     protected _nodeName: string = "FileImportComment";
 
@@ -640,22 +446,11 @@ export class FileImportComment extends Comment implements IFileImportComment {
     }
 
     toString(): string {
-        return `/// from "${this.path}" import ${this.items.map(item => item.toString()).join(", ")}`;
+        return `/// from "${this.path}" import ${this.items.join(", ")}`;
     }
 }
 
 
-/**
- * @class LibImportComment
- * @classDesc 标准库导入注释语句节点
- * @desc 该类表示NDF的标准库导入注释语句节点，用于表示从标准库导入。注意，这不是标准NDF语法的一部分。
- * @extends Comment
- * @see Comment
- * @remarks 语法结构:
- * ```antlr4
- * LibImportComment : '///' 'import' Identifier (',' Identifier)* ;
- * ```
- * */
 export class LibImportComment extends Comment implements ILibImportComment {
     protected _nodeName: string = "LibImportComment";
 
@@ -668,10 +463,6 @@ export class LibImportComment extends Comment implements ILibImportComment {
 
     constructor(public pos: IPos, public readonly value: string) {
         super();
-    }
-
-    get children(): Node[] {
-        return [];
     }
 
     get length(): number {
@@ -687,25 +478,11 @@ export class LibImportComment extends Comment implements ILibImportComment {
     }
 
     toString(): string {
-        return `/// import ${this.items.map(item => item.toString()).join(", ")}`;
+        return `/// import ${this.items.join(", ")}`;
     }
 }
 
 
-/**
- * @class CommonComment
- * @classDesc 通用注释语句节点
- * @desc 该类表示NDF的通用注释语句节点，用于表示注释。
- * @extends Comment
- * @see Comment
- * @remarks 语法结构:
- * ```antlr4
- * CommenComment : ( '//' (~[\r\n])*
- *                 | '/*' .*? '*\/'
- *                 | '(*' .*? '*)'
- *                 ) Newline;
- * ```
- * */
 export class CommenComment extends Comment implements ICommonComment {
     protected _nodeName: string = "CommenComment";
 
@@ -734,36 +511,21 @@ export class CommenComment extends Comment implements ICommonComment {
     }
 
     toString(): string {
-        return `/// ${this.value}`;
+        return this.value;
     }
 }
 
 
 /**
  * @class ParameterDecl
- * @classDesc 模板参数声明语句节点
- * @desc 该类表示NDF的模板参数声明语句节点，用于表示模板参数的声明。
- * @extends InternalNode
- * @see InternalNode
- * @see Identifier
- * @see TypeRef
- * @see Expression
- * @see Comment
- * @remarks 语法结构:
- * ```antlr4
- * ParameterDecl : Divider* Identifier (Annotation | DefaultValue)? Divider*;
- *
- * Annotation : ':' TypeRef;
- *
- * DefaultValue : '=' Expression;
- * ```
- * 对应属性:
- * ```
- * ParameterDecl : comments1 name marks.colonOrAssign (annotation | default) comments2 marks.meybeComma;
- * ```
+ * @classDesc 模板形参声明
+ * @remarks `templateParameter : modifier? name (':' typeRef)? ('=' value)?`
+ * @example `Level : int = 1`
  * */
 export class ParameterDecl extends InternalNode implements IParameterDecl {
     protected _nodeName: string = "ParameterDecl";
+
+    modifier: Nullable<"export" | "private" | "public">;
 
     comments1: Comment[] = [];  // 名称前置注释
     name: Identifier = DEFAULT_IDENTIFIER;
@@ -779,62 +541,43 @@ export class ParameterDecl extends InternalNode implements IParameterDecl {
         super();
     }
 
-    get children(): (Identifier | TypeRef | Expression)[] {
-        return [this.name, this.annotation, this.default].filter(x => x !== undefined);
+    get children(): (Identifier | TypeRef | Expression | Comment[])[] {
+        return [this.comments1, this.name, this.annotation, this.default, this.comments2].filter(x => x !== undefined);
     }
 
     get length(): number {
         return this._length(
-            this.comments1,
-            this.name,
-            this.marks.colonOrAssign,
-            this.annotation,
-            this.default,
-            this.comments2,
-            this.marks.meybeComma
+            this.marks.colonOrAssign === undefined ? undefined : this.marks.colonOrAssign,
+            this.name, this.annotation, this.default, this.marks.meybeComma, this.comments1, this.comments2
         );
     }
 
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            comments1: this.comments1.map(c => c.toJSON()),
             name: this.name.toJSON(),
             annotation: this.annotation?.toJSON(),
             default: this.default?.toJSON(),
-            comments2: this.comments2.map(c => c.toJSON()),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `${this.name.toString()} ${this.annotation ? (": " + this.annotation?.toString()) : ""} ${this.default ? ("= " + this.default?.toString()) : ""}`;
+        return `${this.name.toString()}${this.annotation ? `: ${this.annotation.toString()}` : ""}${this.default ? ` = ${this.default.toString()}` : ""}`;
     }
 }
 
 
 /**
  * @class MemberAssign
- * @classDesc 模板成员赋值语句节点
- * @desc 该类表示NDF的模板成员赋值语句节点，用于表示模板成员的赋值。
- * @extends InternalNode
- * @see InternalNode
- * @see Identifier
- * @see Expression
- * @see Comment
- * @remarks 语法结构:
- * ```antlr4
- * MemberAssign : Identifier ('=' | 'is') Divider* Expression Divider*;
- *
- * Divider : Newline | Comment;
- * ```
- * 对应属性:
- * ```
- * MemberAssign : name marks.assignOrIs comments1 value comments2;
- * ```
+ * @classDesc 模板体成员（模板体的 `objectBody` 中，成员以 `MemberAssign` 表示）
+ * @remarks `bodyItem : modifier? name ':' typeRef ('=' value)? | definition | expression`
+ * @example `Name = <Name>`
  * */
 export class MemberAssign extends InternalNode implements IMemberAssign {
     protected _nodeName: string = "MemberAssign";
+
+    modifier: Nullable<"export" | "private" | "public">;
 
     name: Identifier = DEFAULT_IDENTIFIER;
     operator: "=" | "is" = "=";
@@ -850,28 +593,24 @@ export class MemberAssign extends InternalNode implements IMemberAssign {
         super();
     }
 
-    get children(): (Identifier | Expression)[] {
-        return [this.name, this.value];
+    get children(): (Identifier | Expression | Comment[])[] {
+        return [this.name, this.comments1, this.value, this.comments2];
     }
 
     get length(): number {
         return this._length(
-            this.name,
-            this.marks.assignOrIs,
-            this.comments1,
-            this.value,
-            this.comments2
+            this.marks.modifier, this.name, this.marks.assignOrIs, this.comments1,
+            this.value, this.comments2, this.marks.meybeComma
         );
     }
 
     toJSON(): object {
         return {
             nodeName: this._nodeName,
+            modifier: this.modifier,
             name: this.name.toJSON(),
             operator: this.operator,
-            comments1: this.comments1.map(c => c.toJSON()),
             value: this.value.toJSON(),
-            comments2: this.comments2.map(c => c.toJSON()),
             type: this.type.toJSON?.(true) || this.type
         };
     }
@@ -883,140 +622,37 @@ export class MemberAssign extends InternalNode implements IMemberAssign {
 
 
 /**
- * @class LeafTypeRef
- * @classDesc 叶子节点类型的类型引用节点基类
- * @desc 该类是所有叶子节点类型的类型引用节点的基类，提供了一些公共的属性和方法，包括节点名称、位置、类型、子节点等。
- * @abstract
- * @extends LeafNode
- * @see LeafNode
+ * @class TypeRef
+ * @classDesc 类型引用
+ * @remarks `typeRef : typeName typeArgumentList? typeParameterList?`
+ * @example `TEntityDescriptor`
+ * @example `LIST<TActionDescriptor>`
+ * @example `TEvaluable[required]`
+ * @example `LIST<TActionDescriptor>[required]`
  * */
-export abstract class LeafTypeRef extends LeafNode implements ILeafTypeRef {
-    abstract get value(): string;
-
-    abstract marks: ILeafTypeRefMark;
-
-    get length(): number {
-        return this._length(this.marks.meybeComma);
-    }
-}
-
-
-/**
- * @class InternalTypeRef
- * @classDesc 内部节点类型的类型引用节点基类
- * @desc 该类是所有内部节点类型的类型引用节点的基类，提供了一些公共的属性和方法，包括节点名称、位置、类型、子节点等。
- * @abstract
- * @extends InternalNode
- * @see InternalNode
- * */
-export abstract class InternalTypeRef extends InternalNode implements IInternalTypeRef {
-    abstract get children(): Node[];
-
-    abstract marks: IInternalTypeRefMark;
-}
-
-
-/**
- * @type TypeRef
- * @classDesc 类型引用节点
- * @desc 该类表示NDF的类型引用节点，用于表示类型。
- * @see LeafTypeRef
- * @see InternalTypeRef
- * */
-export type TypeRef = LeafTypeRef | InternalTypeRef;
-
-
-/**
- * @class BuiltinType
- * @classDesc 内置类型引用节点
- * @desc 该类表示NDF的内置类型引用节点，用于表示内置类型。
- * @extends LeafTypeRef
- * @see LeafTypeRef
- * @remarks 语法结构:
- * ```antlr4
- * BuiltinType : 'int' | 'float' | 'bool' | 'string';
- * ```
- * 对应属性:
- * ```
- * BuiltinType : marks.type;
- * ```
- * */
-export class BuiltinType extends LeafTypeRef implements IBuiltinType {
-    protected _nodeName: string = "BuiltinType";
-
-    name: string = "";
-
-    marks: IBuiltinTypeMark = {};
-
-    type: IType = { type: BaseType.UNKNOWN, name: this.name };
-
-    constructor(public pos: IPos) {
-        super();
-    }
-
-    get value(): string {
-        return this.name;
-    }
-
-    get length(): number {
-        return this._length(this.marks.value) + super.length;
-    }
-
-    toJSON(): object {
-        return {
-            nodeName: this._nodeName,
-            name: this.name,
-            type: this.type.toJSON?.(true) || this.type
-        };
-    }
-
-    toString(): string {
-        return `${this.name}`;
-    }
-}
-
-
-/**
- * @class GenericType
- * @classDesc 泛型类型引用节点
- * @desc 该类表示NDF的泛型类型引用节点，用于表示泛型类型。
- * @extends InternalTypeRef
- * @see InternalTypeRef
- * @remarks 语法结构:
- * ```antlr4
- * GenericType : (Identifier | 'MAP') Divider* '<' TypeRef (',' TypeRef)* '>' ;
- * ```
- * 对应属性:
- * ```
- * GenericType : name comments1 typeParams;
- * ```
- * */
-export class GenericType extends InternalTypeRef implements IGenericType {
-    protected _nodeName: string = "GenericType";
+export class TypeRef extends InternalNode implements ITypeRef {
+    protected _nodeName: string = "TypeRef";
 
     name: Identifier = DEFAULT_IDENTIFIER;
-    comments1: Comment[] = [];
-    typeParams: TypeRef[] = [];
+    typeArgs: TypeRef[] = [];
+    annotations: TypeAnnotation[] = [];
 
-    marks: IGenericTypeMark = {};
+    marks: ITypeRefMark = {};
 
     type: IType = { type: BaseType.UNKNOWN };
 
-    constructor(public pos: IPos) {
+    constructor(public pos: IPos, public readonly belong?: ASTWithBelong) {
         super();
     }
 
-    get children(): (Identifier | TypeRef[])[] {
-        return [this.name, this.typeParams];
+    get children(): (Identifier | TypeRef[] | TypeAnnotation[])[] {
+        return [this.name, this.typeArgs, this.annotations];
     }
 
     get length(): number {
         return this._length(
-            this.marks.meybeMap,
-            this.name,
-            this.comments1,
-            this.typeParams,
-            this.marks.meybeComma
+            this.name, this.marks.lt, this.typeArgs, this.marks.gt,
+            this.marks.leftBracket, this.annotations, this.marks.rightBracket, this.marks.meybeComma
         );
     }
 
@@ -1024,26 +660,90 @@ export class GenericType extends InternalTypeRef implements IGenericType {
         return {
             nodeName: this._nodeName,
             name: this.name.toJSON(),
-            comments: this.comments1.map(c => c.toJSON()),
-            typeParams: this.typeParams.map(t => t.toJSON()),
+            typeArgs: this.typeArgs.map(arg => arg.toJSON()),
+            annotations: this.annotations.map(annotation => annotation.toJSON()),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `${this.name.toString()} <${this.typeParams.map(t => t.toString()).join(", ")}>`;
+        return `${this.name.toString()}`
+            + (this.typeArgs.length ? `<${this.typeArgs.map(arg => arg.toString()).join(", ")}>` : "")
+            + (this.annotations.length ? `[${this.annotations.map(a => a.toString()).join(", ")}]` : "");
     }
 }
 
 
 /**
- * @class LeafExpression
- * @classDesc 叶子表达式节点基类
- * @desc 该类是所有叶子表达式节点的基类，提供了一些公共的属性和方法，包括节点名称、位置、类型、值等。
- * @abstract
- * @extends LeafNode
- * @see LeafNode
+ * @class TypeAnnotation
+ * @classDesc 类型注解实参
+ * @remarks
+ * ```
+ * typeParameter : typeConstraint
+ *               | name '=' value
+ *               | name ':' typeRef ('=' value)?
+ *               | name
+ *               | expression
+ * ```
  * */
+export class TypeAnnotation extends InternalNode implements ITypeAnnotation {
+    protected _nodeName: string = "TypeAnnotation";
+
+    kind: "flag" | "value" | "typed" | "constraint" = "flag";
+
+    name: Nullable<Identifier>;
+    annotation: Nullable<TypeRef>;
+    value: Nullable<Expression>;
+
+    marks: ITypeAnnotationMark = {};
+
+    type: IType = { type: BaseType.UNNEEDED };
+
+    constructor(public pos: IPos) {
+        super();
+    }
+
+    get children(): (Identifier | TypeRef | Expression)[] {
+        return [this.name, this.annotation, this.value].filter(x => x !== undefined) as (Identifier | TypeRef | Expression)[];
+    }
+
+    get length(): number {
+        return this._length(
+            this.marks.operator, this.name, this.marks.assign,
+            this.annotation, this.value, this.marks.meybeComma
+        );
+    }
+
+    toJSON(): object {
+        return {
+            nodeName: this._nodeName,
+            kind: this.kind,
+            name: this.name?.toJSON(),
+            annotation: this.annotation?.toJSON(),
+            value: this.value?.toJSON(),
+            type: this.type.toJSON?.(true) || this.type
+        };
+    }
+
+    toString(): string {
+        switch (this.kind) {
+            case "constraint":
+                return `${this.marks.operator?.value || ">="} ${this.value?.toString() || "0"}`;
+            case "value":
+                return `${this.name?.toString()} = ${this.value?.toString()}`;
+            case "typed":
+                return `${this.name?.toString()}: ${this.annotation?.toString()}${this.value ? ` = ${this.value.toString()}` : ""}`;
+            default:
+                return `${this.name?.toString()}`;
+        }
+    }
+}
+
+
+/* ============================================================================
+ * 表达式
+ * ========================================================================== */
+
 export abstract class LeafExpression extends LeafNode implements ILeafExpression {
     abstract get value(): string;
 
@@ -1058,13 +758,6 @@ export abstract class LeafExpression extends LeafNode implements ILeafExpression
 }
 
 
-/**
- * @class InternalExpression
- * @classDesc 内部表达式节点基类
- * @desc 该类是所有内部表达式节点的基类，提供了一些公共的属性和方法，包括节点名称、位置、类型、子节点等。
- * @abstract
- * @extends InternalNode
- * */
 export abstract class InternalExpression extends InternalNode implements IInternalExpression {
     abstract get children(): Node[];
 
@@ -1079,23 +772,12 @@ export abstract class InternalExpression extends InternalNode implements IIntern
 }
 
 
-/**
- * @type Expression
- * @classDesc 表达式节点
- * @desc 该类表示NDF的表达式节点，用于表示表达式。
- * @see LeafExpression
- * @see InternalExpression
- * */
 export type Expression = LeafExpression | InternalExpression;
 
 
 /**
  * @class Identifier
- * @classDesc 标识符表达式节点
- * @desc 该类表示NDF的标识符表达式节点，用于表示标识符。
- * @extends LeafExpression
- * @see LeafExpression
- * @remarks
+ * @classDesc 标识符表达式（名字 / 内建类型名 / 容器名）
  * */
 export class Identifier extends LeafExpression implements IIdentifier {
     protected _nodeName: string = "Identifier";
@@ -1132,29 +814,6 @@ export class Identifier extends LeafExpression implements IIdentifier {
 }
 
 
-/**
- * @class UnaryExpr
- * @classDesc 一元表达式节点
- * @desc 该类表示NDF的一元表达式节点，用于表示一元表达式。
- * @extends InternalExpression
- * @see InternalExpression
- * @see ObjectCall
- * @see IndexAccess
- * @see MemberAccess
- * @see Comment
- * @remarks 语法结构:
- * ```antlr4
- * UnaryExpr : ('-' | '!')? Divider* PostfixExpr ;
- *
- * PostfixExpr : PrimaryExpr (ObjectCall | IndexAccess | MemberAccess)?
- *
- * Divider : Newline | Comment;
- * ```
- * 对应属性:
- * ```
- * UnaryExpr : marks.subOrNot operand;
- * ```
- * */
 export class UnaryExpr extends InternalExpression implements IUnaryExpr {
     protected _nodeName: string = "UnaryExpr";
 
@@ -1169,15 +828,12 @@ export class UnaryExpr extends InternalExpression implements IUnaryExpr {
         super();
     }
 
-    get children(): Expression[] {
-        return [this.operand];
+    get children(): Node[] {
+        return [this.leadingComments, this.operand, this.trailingComments];
     }
 
     get length(): number {
-        return this._length(
-            this.marks.subOrNot,
-            this.operand
-        ) + super.length;
+        return this._length(this.marks.subOrNot, this.operand);
     }
 
     toJSON(): object {
@@ -1195,18 +851,6 @@ export class UnaryExpr extends InternalExpression implements IUnaryExpr {
 }
 
 
-/**
- * @class BinaryExpr
- * @classDesc 二元表达式节点
- * @desc 该类表示NDF的二元表达式节点，用于表示二元表达式。
- * @extends InternalExpression
- * @see InternalExpression
- * @see ObjectCall
- * @see IndexAccess
- * @see MemberAccess
- * @see Comment
- * @remarks 语法结构:
- * */
 export class BinaryExpr extends InternalExpression implements IBinaryExpr {
     protected _nodeName: string = "BinaryExpr";
 
@@ -1224,26 +868,19 @@ export class BinaryExpr extends InternalExpression implements IBinaryExpr {
         super();
     }
 
-    get children(): Expression[] {
-        return [this.left, this.right];
+    get children(): (Expression | Comment[])[] {
+        return [this.left, this.comments1, this.comments2, this.right];
     }
 
     get length(): number {
-        return this._length(
-            this.left,
-            this.comments1,
-            this.marks.operator,
-            this.comments2
-        ) + super.length;
+        return this._length(this.left, this.comments1, this.marks.operator, this.comments2, this.right);
     }
 
     toJSON(): object {
         return {
             nodeName: this._nodeName,
             left: this.left.toJSON(),
-            comments1: this.comments1.map(c => c.toJSON()),
             operator: this.operator,
-            comments2: this.comments2.map(c => c.toJSON()),
             right: this.right.toJSON(),
             type: this.type.toJSON?.(true) || this.type
         };
@@ -1274,32 +911,22 @@ export class TernaryExpr extends InternalExpression implements ITernaryExpr {
         super();
     }
 
-    get children(): Expression[] {
-        return [this.condition, this.trueExpr, this.falseExpr];
+    get children(): (Expression | Comment[])[] {
+        return [this.condition, this.comments1, this.comments2, this.trueExpr, this.comments3, this.comments4, this.falseExpr];
     }
 
     get length(): number {
         return this._length(
-            this.condition,
-            this.comments1,
-            this.marks.question,
-            this.comments2,
-            this.trueExpr,
-            this.comments3,
-            this.marks.colon,
-            this.comments4
-        ) + super.length;
+            this.condition, this.comments1, this.marks.question, this.comments2,
+            this.trueExpr, this.comments3, this.marks.colon, this.comments4, this.falseExpr
+        );
     }
 
     toJSON(): object {
         return {
             nodeName: this._nodeName,
             condition: this.condition.toJSON(),
-            comments1: this.comments1.map(c => c.toJSON()),
-            comments2: this.comments2.map(c => c.toJSON()),
             trueExpr: this.trueExpr.toJSON(),
-            comments3: this.comments3.map(c => c.toJSON()),
-            comments4: this.comments4.map(c => c.toJSON()),
             falseExpr: this.falseExpr.toJSON(),
             type: this.type.toJSON?.(true) || this.type
         };
@@ -1311,6 +938,10 @@ export class TernaryExpr extends InternalExpression implements ITernaryExpr {
 }
 
 
+/**
+ * @class TemplateParam
+ * @classDesc 模板形参引用 `<Name>`
+ * */
 export class TemplateParam extends LeafExpression implements ITemplateParam {
     protected _nodeName: string = "TemplateParam";
 
@@ -1318,22 +949,18 @@ export class TemplateParam extends LeafExpression implements ITemplateParam {
 
     marks: ITemplateParamMark = {};
 
-    type: IType = { type: BaseType.UNKNOWN, name: this.name.toString() };
+    type: IType = { type: BaseType.UNKNOWN };
 
     constructor(public pos: IPos) {
         super();
     }
 
     get value(): string {
-        return this.name.value;
+        return `<${this.name.value}>`;
     }
 
     get length(): number {
-        return this._length(
-            this.marks.lt,
-            this.marks.value,
-            this.marks.gt
-        ) + super.length;
+        return this._length(this.marks.lt, this.name, this.marks.gt);
     }
 
     toJSON(): object {
@@ -1350,58 +977,66 @@ export class TemplateParam extends LeafExpression implements ITemplateParam {
 }
 
 
+/**
+ * @class ObjectCall
+ * @classDesc 对象构造 / 模板实例化 / 调用
+ * @remarks `postfixPart : objectBody | arrayLiteral | '/' name | '.' name`
+ * @example `TEntityDescriptor ( Member = 1 )`
+ * @example `Character ( Name = "Hero" )`
+ * */
 export class ObjectCall extends InternalExpression implements IObjectCall {
     protected _nodeName: string = "ObjectCall";
 
     blueprint: Identifier = DEFAULT_IDENTIFIER;
+
     comments1: Comment[] = [];
     comments2: Comment[] = [];
     args: Argument[] = [];
 
     marks: IObjectCallMark = {};
 
-    type: IType = { type: BaseType.OBJECT, name: this.blueprint.toString() };
+    type: IType = { type: BaseType.UNKNOWN };
 
     constructor(public pos: IPos) {
         super();
     }
 
-    get children(): (Identifier | Argument[])[] {
-        return [this.blueprint, this.args];
+    get children(): (Identifier | Comment[] | Argument[])[] {
+        return [this.blueprint, this.comments1, this.comments2, this.args];
     }
 
     get length(): number {
         return this._length(
-            this.blueprint,
-            this.comments1,
-            this.marks.leftParen,
-            this.comments2,
-            this.marks.rightParen
-        ) + super.length;
+            this.blueprint, this.comments1, this.marks.leftParen,
+            this.comments2, this.args, this.marks.rightParen
+        );
     }
 
     toJSON(): object {
         return {
             nodeName: this._nodeName,
             blueprint: this.blueprint.toJSON(),
-            comments1: this.comments1.map(c => c.toJSON()),
-            comments2: this.comments2.map(c => c.toJSON()),
-            args: this.args.map(a => a.toJSON()),
+            args: this.args.map(arg => arg.toJSON()),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `${this.blueprint.toString()} (${this.args.map(arg => arg.toString()).join(",")})`;
+        return `${this.blueprint.toString()} (${this.args.map(arg => arg.toString()).join(" ")} )`;
     }
 }
 
 
+/**
+ * @class IndexAccess
+ * @classDesc 下标访问 / 内建函数调用 / 内建类型构造
+ * @example `float3[0, 0, 0]`、`length[parA - parB]`、`lerp[a, b, c]`
+ * */
 export class IndexAccess extends InternalExpression implements IIndexAccess {
     protected _nodeName: string = "IndexAccess";
 
     target: Expression = DEFAULT_IDENTIFIER;
-    index: Expression = DEFAULT_IDENTIFIER;
+    args: Expression[] = [];
 
     marks: IIndexAccessMark = {};
 
@@ -1411,38 +1046,39 @@ export class IndexAccess extends InternalExpression implements IIndexAccess {
         super();
     }
 
-    get children(): Expression[] {
-        return [this.index, this.target];
+    get children(): (Expression | Expression[])[] {
+        return [this.target, this.args];
     }
 
     get length(): number {
-        return this._length(
-            this.target,
-            this.marks.leftBracket,
-            this.index,
-            this.marks.rightBracket
-        ) + super.length;
+        return this._length(this.target, this.marks.leftBracket, this.args, this.marks.rightBracket);
     }
 
     toJSON(): object {
         return {
             nodeName: this._nodeName,
             target: this.target.toJSON(),
-            index: this.index.toJSON(),
+            args: this.args.map(arg => arg.toJSON()),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `${this.target.toString()}[${this.target.toString()}]`;
+        return `${this.target.toString()}[${this.args.map(arg => arg.toString()).join(", ")}]`;
     }
 }
 
 
+/**
+ * @class MemberAccess
+ * @classDesc 成员/枚举路径访问
+ * @example `~/Table.Value`（`.`）、`EUnitMovingType/Track`（`/`）
+ * */
 export class MemberAccess extends InternalExpression implements IMemberAccess {
     protected _nodeName: string = "MemberAccess";
 
     target: Expression = DEFAULT_IDENTIFIER;
+    separator: "/" | "." = "/";
     property: Identifier = DEFAULT_IDENTIFIER;
 
     marks: IMemberAccessMark = {};
@@ -1453,33 +1089,39 @@ export class MemberAccess extends InternalExpression implements IMemberAccess {
         super();
     }
 
-    get children(): Expression[] {
+    get children(): (Expression | Identifier)[] {
         return [this.target, this.property];
     }
 
     get length(): number {
-        return this._length(this.target, this.marks.div, this.property) + super.length;
+        return this._length(this.target, this.marks.separator, this.property);
     }
 
     toJSON(): object {
         return {
             nodeName: this._nodeName,
             target: this.target.toJSON(),
+            separator: this.separator,
             property: this.property.toJSON(),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `${this.target.toString()}/${this.property.toString()}`;
+        return `${this.target.toString()}${this.separator}${this.property.toString()}`;
     }
 }
 
 
+/**
+ * @class ParenthesisExpr
+ * @classDesc 括号表达式；带逗号时是序对 `(a, b)`
+ * */
 export class ParenthesisExpr extends InternalExpression implements IParenthesisExpr {
     protected _nodeName: string = "ParenthesisExpr";
 
     expr: Expression = DEFAULT_IDENTIFIER;
+    second: Nullable<Expression>;
 
     marks: IParenthesisExprMark = {};
 
@@ -1489,37 +1131,40 @@ export class ParenthesisExpr extends InternalExpression implements IParenthesisE
         super();
     }
 
-    get children(): Expression[] {
-        return [this.expr];
+    get children(): (Expression)[] {
+        return this.second ? [this.expr, this.second] : [this.expr];
     }
 
     get length(): number {
         return this._length(
-            this.marks.leftParen,
-            this.expr,
-            this.marks.rightParen
-        ) + super.length;
+            this.marks.leftParen, this.expr, this.marks.comma, this.second, this.marks.rightParen
+        );
     }
 
     toJSON(): object {
         return {
             nodeName: this._nodeName,
             expr: this.expr.toJSON(),
+            second: this.second?.toJSON(),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `(${this.expr.toString()})`;
+        return `(${this.expr.toString()}${this.second ? `, ${this.second.toString()}` : ""})`;
     }
 }
 
 
+/**
+ * @class Reference
+ * @classDesc 引用：`$/A/B` 或 `~/A/B`
+ * */
 export class Reference extends LeafExpression implements IReference {
     protected _nodeName: string = "Reference";
 
-    operator: "$" | "~" | "." = "$";
-    name: Identifier = DEFAULT_IDENTIFIER;
+    operator: "$" | "~" = "$";
+    segments: Identifier[] = [];
 
     marks: IReferenceMark = {};
 
@@ -1530,32 +1175,36 @@ export class Reference extends LeafExpression implements IReference {
     }
 
     get value(): string {
-        return this.name.value;
+        return `${this.operator}/${this.segments.map(segment => segment.value).join("/")}`;
+    }
+
+    get name(): Identifier {
+        return this.segments.length ? this.segments[this.segments.length - 1] : DEFAULT_IDENTIFIER;
     }
 
     get length(): number {
-        return this._length(
-            this.marks.dollarOrTildeOrDot,
-            this.marks.div,
-            this.marks.value
-        ) + super.length;
+        return this._length(this.marks.prefix, this.segments);
     }
 
     toJSON(): object {
         return {
             nodeName: this._nodeName,
             operator: this.operator,
-            name: this.name.toJSON(),
+            segments: this.segments.map(segment => segment.toJSON()),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `${this.operator}/${this.name.value}`;
+        return this.value;
     }
 }
 
 
+/**
+ * @class GuidCall
+ * @classDesc GUID 字面量 `GUID:{…}`
+ * */
 export class GuidCall extends LeafExpression implements IGuidCall {
     protected _nodeName: string = "GuidCall";
 
@@ -1574,13 +1223,7 @@ export class GuidCall extends LeafExpression implements IGuidCall {
     }
 
     get length(): number {
-        return this._length(
-            this.marks.guid,
-            this.marks.colon,
-            this.marks.leftBrace,
-            this.marks.value,
-            this.marks.rightBrace
-        ) + super.length;
+        return this._length(this.marks.colon, this.marks.value);
     }
 
     toJSON(): object {
@@ -1592,57 +1235,58 @@ export class GuidCall extends LeafExpression implements IGuidCall {
     }
 
     toString(): string {
-        return `GUID:{${this.uuid}}`;
+        return `GUID:${this.uuid}`;
     }
 }
 
 
+/**
+ * @class MapDef
+ * @classDesc MAP 字面量：`MAP [ (k, v), … ]`
+ * */
 export class MapDef extends InternalExpression implements IMapDef {
     protected _nodeName: string = "MapDef";
 
-    comments1: Comment[] = [];  // Map关键字尾随的注释
+    comments1: Comment[] = [];
     pairs: Pair[] = [];
-    comments2: Comment[] = [];  // 当存在尾随逗号且其后尾随注释时，其注释没有Pair来记录，因此需要单独记录
-
-    type: IType = { type: BaseType.MAP };
+    comments2: Comment[] = [];
 
     marks: IMapDefMark = {};
+
+    type: IType = { type: BaseType.MAP };
 
     constructor(public pos: IPos) {
         super();
     }
 
-    get children(): Pair[] {
-        return this.pairs;
+    get children(): (Pair[] | Comment[])[] {
+        return [this.comments1, this.pairs, this.comments2];
     }
 
     get length(): number {
         return this._length(
-            this.marks.map,
-            this.comments1,
-            this.marks.leftBracket,
-            this.pairs,
-            this.comments2,
-            this.marks.rightBracket
-        ) + super.length;
+            this.marks.map, this.marks.leftBracket, this.comments1, this.pairs, this.comments2, this.marks.rightBracket
+        );
     }
 
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            comments1: this.comments1.map(c => c.toJSON()),
-            pairs: this.pairs.map(p => p.toJSON()),
-            comments2: this.comments2.map(c => c.toJSON()),
+            pairs: this.pairs.map(pair => pair.toJSON()),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `MAP [${this.pairs.map(p => p.toString()).join(",")}]`;
+        return `MAP[${this.pairs.map(pair => pair.toString()).join(", ")}]`;
     }
 }
 
 
+/**
+ * @class Pair
+ * @classDesc 序对 `(a, b)`
+ * */
 export class Pair extends InternalExpression implements IPair {
     protected _nodeName: string = "Pair";
 
@@ -1651,7 +1295,7 @@ export class Pair extends InternalExpression implements IPair {
 
     marks: IPairMark = {};
 
-    type: IType = { type: BaseType.UNKNOWN };
+    type: IType = { type: BaseType.PAIR };
 
     constructor(public pos: IPos) {
         super();
@@ -1662,13 +1306,7 @@ export class Pair extends InternalExpression implements IPair {
     }
 
     get length(): number {
-        return this._length(
-            this.marks.leftParen,
-            this.key,
-            this.marks.comma,
-            this.value,
-            this.marks.rightParen
-        ) + super.length;
+        return this._length(this.marks.leftParen, this.key, this.marks.comma, this.value, this.marks.rightParen);
     }
 
     toJSON(): object {
@@ -1686,11 +1324,15 @@ export class Pair extends InternalExpression implements IPair {
 }
 
 
+/**
+ * @class VectorDef
+ * @classDesc 向量字面量 `[ … ]`
+ * */
 export class VectorDef extends InternalExpression implements IVectorDef {
     protected _nodeName: string = "VectorDef";
 
     elements: Expression[] = [];
-    comments1: Comment[] = [];  // 当存在尾随逗号且其后尾随注释时，其注释没有Expression来记录，因此需要单独记录
+    comments1: Comment[] = [];
 
     marks: IVectorDefMark = {};
 
@@ -1700,105 +1342,58 @@ export class VectorDef extends InternalExpression implements IVectorDef {
         super();
     }
 
-    get children(): Expression[] {
-        return this.elements;
+    get children(): (Expression[] | Comment[])[] {
+        return [this.comments1, this.elements];
     }
 
     get length(): number {
-        return this._length(
-            this.marks.leftBracket,
-            this.elements,
-            this.comments1,
-            this.marks.rightBracket
-        ) + super.length;
+        return this._length(this.marks.leftBracket, this.comments1, this.elements, this.marks.rightBracket);
     }
 
     toJSON(): object {
         return {
             nodeName: this._nodeName,
-            elements: this.elements.map(p => p.toJSON()),
-            comments1: this.comments1.map(c => c.toJSON()),
+            elements: this.elements.map(element => element.toJSON()),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `[${this.elements.map(p => p.toString()).join(",")}]`;
+        return `[${this.elements.map(element => element.toString()).join(", ")}]`;
     }
 }
 
 
-export class TypeConstructor extends InternalExpression implements ITypeConstructor {
-    protected _nodeName: string = "TypeConstructor";
+/**
+ * @class DefinitionExpr
+ * @classDesc 作为值出现的定义（v1 的 PropertyAssignExpr）
+ * @remarks `value : definition | expression`
+ * @example `ParticleDescriptor = export PD is ParticleDescriptor ( … )`
+ * @example `[ private parX is Template_Param_Int ( DefaultValue = 1 ), ]`
+ * */
+export class DefinitionExpr extends InternalExpression implements IDefinitionExpr {
+    protected _nodeName: string = "DefinitionExpr";
+
+    modifier: Nullable<"export" | "private" | "public">;
 
     name: Identifier = DEFAULT_IDENTIFIER;
-    comments1: Comment[] = [];
-    args: Expression[] = [];
-
-    marks: ITypeConstructorMark = {};
-
-    type: IType = { type: BaseType.UNKNOWN };
-
-    constructor(public pos: IPos) {
-        super();
-    }
-
-    get children(): (TypeRef | Expression[])[] {
-        return [this.name, this.args];
-    }
-
-    get length(): number {
-        return this._length(
-            this.name,
-            this.comments1,
-            this.marks.leftBracket,
-            this.args,
-            this.marks.rightBracket
-        ) + super.length;
-    }
-
-    toJSON(): object {
-        return {
-            nodeName: this._nodeName,
-            name: this.name.toJSON(),
-            comments1: this.comments1.map(c => c.toJSON()),
-            args: this.args.map(a => a.toJSON()),
-            type: this.type.toJSON?.(true) || this.type
-        };
-    }
-
-    toString(): string {
-        return `${this.name.toString()}[${this.args.map(arg => arg.toString()).join(",")}]`;
-    }
-}
-
-
-export class PropertyAssignExpr extends InternalExpression implements IPropertyAssignExpr {
-    protected _nodeName: string = "PropertyAssignExpr";
-
-    modifier: Nullable<"private">;
-    name: Identifier = DEFAULT_IDENTIFIER;
+    operator: "is" | "=" = "is";
     value: Expression = DEFAULT_IDENTIFIER;
+
+    marks: IDefinitionExprMark = {};
 
     type: IType = { type: BaseType.UNNEEDED };
 
-    marks: IPropertyAssignMark = {};
-
     constructor(public pos: IPos) {
         super();
     }
 
-    get children(): Expression[] {
+    get children(): (Identifier | Expression)[] {
         return [this.name, this.value];
     }
 
     get length(): number {
-        return this._length(
-            this.marks.modifier,
-            this.name,
-            this.marks.is,
-            this.value
-        ) + super.length;
+        return this._length(this.marks.modifier, this.name, this.marks.is, this.value);
     }
 
     toJSON(): object {
@@ -1806,47 +1401,55 @@ export class PropertyAssignExpr extends InternalExpression implements IPropertyA
             nodeName: this._nodeName,
             modifier: this.modifier,
             name: this.name.toJSON(),
+            operator: this.operator,
             value: this.value.toJSON(),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `${this.modifier ? `${this.modifier} ` : ""}${this.name.toString()} is ${this.value.toString()}`;
+        return `${this.modifier ? `${this.modifier} ` : ""}${this.name.toString()} ${this.operator} ${this.value.toString()}`;
     }
 }
 
 
+/**
+ * @class Argument
+ * @classDesc 对象体/实参表条目
+ * @remarks
+ * ```
+ * bodyItem : modifier? name ':' typeRef ('=' value)?   // 键入实参
+ *          | definition                              // Name = value / Name is value
+ *          | expression                              // 位置实参
+ * ```
+ * */
 export class Argument extends InternalNode implements IArgument {
     protected _nodeName: string = "Argument";
 
-    modifier: Nullable<"export" | "public">;
-    name: Identifier = DEFAULT_IDENTIFIER;
+    modifier: Nullable<"export" | "private" | "public">;
+    name: Nullable<Identifier>;
     annotation: Nullable<TypeRef>;
     operator: Nullable<"=" | "is">;
     value: Nullable<Expression>;
+    positional: boolean = false;
     comments1: Comment[] = [];
 
     marks: IArgumentMark = {};
 
     type: IType = { type: BaseType.UNNEEDED };
 
-    constructor(public pos: IPos, public readonly belong: ObjectCall | UnnamedObj) {
+    constructor(public pos: IPos, public readonly belong?: ObjectCall | UnnamedObj) {
         super();
     }
 
-    get children(): (Identifier | Expression | TypeRef)[] {
-        return [this.name, this.value, this.annotation].filter(x => x !== undefined);
+    get children(): (Identifier | Expression | TypeRef | Comment[])[] {
+        return [this.name, this.annotation, this.value, this.comments1].filter(x => x !== undefined) as (Identifier | Expression | TypeRef | Comment[])[];
     }
 
     get length(): number {
         return this._length(
-            this.marks.modifier,
-            this.name,
-            this.marks.colonOrAssignOrIs,
-            this.annotation,
-            this.value,
-            this.comments1
+            this.marks.modifier, this.name, this.marks.colonOrAssignOrIs,
+            this.annotation, this.value, this.comments1, this.marks.meybeComma
         );
     }
 
@@ -1854,20 +1457,30 @@ export class Argument extends InternalNode implements IArgument {
         return {
             nodeName: this._nodeName,
             modifier: this.modifier,
-            name: this.name.toJSON(),
+            name: this.name?.toJSON(),
             annotation: this.annotation?.toJSON(),
             operator: this.operator,
+            positional: this.positional,
             value: this.value?.toJSON(),
-            comments1: this.comments1.map(c => c.toJSON()),
+            comments1: this.comments1.map(comment => comment.toJSON()),
             type: this.type.toJSON?.(true) || this.type
         };
     }
 
     toString(): string {
-        return `${this.modifier ? `${this.modifier} ` : ""}${this.name.toString()} ${this.annotation ? (": " + this.annotation!.toString()) : ("= " + this.value!.toString())}`;
+        if (this.positional)
+            return this.value?.toString() || "";
+
+        return `${this.modifier ? `${this.modifier} ` : ""}${this.name?.toString()}`
+            + (this.annotation ? `: ${this.annotation.toString()}` : "")
+            + (this.operator ? ` ${this.operator} ${this.value?.toString()}` : "");
     }
 }
 
+
+/* ============================================================================
+ * 字面量
+ * ========================================================================== */
 
 export abstract class Literal extends LeafExpression implements ILiteral {
     abstract value: string;
@@ -2021,9 +1634,6 @@ export class Nil extends Literal implements INil {
 }
 
 
-const DEFAULT_IDENTIFIER = new Identifier({ line: -1, column: -1 });
-
-
 export class ErrorExpr extends LeafExpression {
     protected _nodeName: string = "ErrorExpr";
 
@@ -2053,8 +1663,11 @@ export class ErrorExpr extends LeafExpression {
     get value(): string {
         return "ErrorExpr";
     }
-
 }
+
+
+const DEFAULT_IDENTIFIER = new Identifier({ line: -1, column: -1 });
+const DEFAULT_TYPEREF = new TypeRef({ line: -1, column: -1 });
 
 
 export class Visitor {
@@ -2075,4 +1688,7 @@ export class Visitor {
         );
     }
 }
+
+
+
 

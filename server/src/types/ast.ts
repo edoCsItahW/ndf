@@ -9,17 +9,27 @@
 /**
  * @file ast.ts
  * @author edocsitahw
- * @version 1.1
+ * @version 2.0
  * @date 2025/04/25 00:06
- * @desc
+ * @desc AST 节点的接口定义（NDF 语法 v2）
  * @copyright CC BY-NC-SA 2025. All rights reserved.
+ *
+ * @remarks
+ * 与 v1 接口的差异：
+ * - `TypeRef` 由 `BuiltinType | GenericType` 合并为单一节点，携带泛型实参 `typeArgs` 与注解实参 `annotations`；
+ * - 新增 `TypeAnnotation`（`[required]` / `[GroupBy = "…"]` / `[Name : Type]` / `[>= 0]`）；
+ * - `Reference` 由"单段名字"改为"任意段路径" `segments`；
+ * - `MemberAccess` 增加 `/` 与 `.` 两种分隔符；
+ * - `Argument` 支持位置实参（`positional`）与键入实参（`annotation`）；
+ * - `PropertyAssignExpr` 更名为 `DefinitionExpr`，修饰符扩展为 `export | private | public`；
+ * - 删除 `TypeConstructor`：`float3[0,0,0]` 解析为 `IndexAccess`。
  * */
 import { IPos, IType, Nullable } from "./other";
 import { Token } from "../lexer";
 import { Comment } from "../parser";
 
 
-export type BinaryOperator = "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "div" | "|" | "&";
+export type BinaryOperator = "+" | "-" | "*" | "%" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "div" | "|" | "&";
 
 
 export type Node = ILeafNode | IInternalNode | Array<Node>;
@@ -62,6 +72,9 @@ export interface IInternalNode extends IAST {
 
 export interface IProgram extends IInternalNode {
     statements: IStatement[];
+
+    /** 非语句层注释（语句层注释本身就是 Statement） */
+    comments: IComment[];
 }
 
 
@@ -87,6 +100,9 @@ export interface IAssignment extends IInternalStatement {
     name: IIdentifier;
     value: IExpression;
 
+    /** 赋值运算符：顶层语句实际只用 `is`，语法上兼容 `=` */
+    get operator(): "is" | "=";
+
     marks: IAssignMark;
 }
 
@@ -103,13 +119,14 @@ export interface ITemplateDefMark {
 
 
 export interface ITemplateDef extends IInternalStatement {
-    modifier: Nullable<"private">;
+    modifier: Nullable<"export" | "private" | "public">;
     name: IIdentifier;
     comments1: IComment[];
     params: IParameterDecl[];
+    separatorComments1: IComment[];
     comments2: IComment[];
     comments3: IComment[];
-    extend: IIdentifier;
+    extend: ITypeRef;
     comments4: IComment[];
     comments5: IComment[];
     members: IMemberAssign[];
@@ -174,7 +191,9 @@ export interface IParameterDecl extends IInternalNode {
 
 
 export interface IMemberAssignMark {
+    modifier?: Token;
     assignOrIs?: Token;
+    meybeComma?: Token;
 }
 
 
@@ -189,53 +208,51 @@ export interface IMemberAssign extends IInternalNode {
 }
 
 
-export interface ILeafTypeRefMark extends ILeafNodeMark {
-    meybeComma?: Token;
-}
-
-
-export interface IInternalTypeRefMark extends IInternalNodeMark {
-    meybeComma?: Token;
-}
-
-
-export interface ILeafTypeRef extends ILeafNode {
-    marks: ILeafTypeRefMark;
-}
-
-
-export interface IInternalTypeRef extends IInternalNode {
-    marks: IInternalTypeRefMark;
-}
-
-
-export type ITypeRef = ILeafTypeRef | IInternalTypeRef;
-
-
-export interface IBuiltinTypeMark extends ILeafTypeRefMark {
-}
-
-
-export interface IBuiltinType extends ILeafTypeRef {
-    name: string;
-
-    marks: IBuiltinTypeMark;
-}
-
-
-export interface IGenericTypeMark extends IInternalTypeRefMark {
-    meybeMap?: Token;
+export interface ITypeRefMark extends IInternalNodeMark {
     lt?: Token;
     gt?: Token;
+    leftBracket?: Token;
+    rightBracket?: Token;
+    meybeComma?: Token;
 }
 
 
-export interface IGenericType extends IInternalTypeRef {
+/**
+ * @interface ITypeRef
+ * @desc 类型引用：`类型名 [<泛型实参>] [[注解实参]]`，两种后缀可以同时出现
+ * @example LIST<TActionDescriptor>[required]
+ * */
+export interface ITypeRef extends IInternalNode {
     name: IIdentifier;
-    comments1: IComment[];
-    typeParams: ITypeRef[];
+    typeArgs: ITypeRef[];
+    annotations: ITypeAnnotation[];
 
-    marks: IGenericTypeMark;
+    marks: ITypeRefMark;
+}
+
+
+export interface ITypeAnnotationMark extends IInternalNodeMark {
+    operator?: Token;
+    assign?: Token;
+    meybeComma?: Token;
+}
+
+
+/**
+ * @interface ITypeAnnotation
+ * @desc 类型注解实参
+ * @example required                        -> kind = "flag"
+ * @example GroupBy = "Position"            -> kind = "value"
+ * @example ExpectedType : float3 = 'any'   -> kind = "typed"
+ * @example >= 0                            -> kind = "constraint"
+ * */
+export interface ITypeAnnotation extends IInternalNode {
+    kind: "flag" | "value" | "typed" | "constraint";
+    name: Nullable<IIdentifier>;
+    annotation: Nullable<ITypeRef>;
+    value: Nullable<IExpression>;
+
+    marks: ITypeAnnotationMark;
 }
 
 
@@ -333,6 +350,10 @@ export interface ITemplateParamMark extends ILeafExpressionMark {
 }
 
 
+/**
+ * @interface ITemplateParam
+ * @desc 模板形参引用 `<Name>`
+ * */
 export interface ITemplateParam extends ILeafExpression {
     name: IIdentifier;
 
@@ -362,47 +383,69 @@ export interface IIndexAccessMark extends IInternalExpressionMark {
 }
 
 
+/**
+ * @interface IIndexAccess
+ * @desc 下标/内建函数调用/内建类型构造：`sqr[x]`、`lerp[a, b, c]`、`float3[0, 0, 0]`
+ * */
 export interface IIndexAccess extends IInternalExpression {
     target: IExpression;
-    index: IExpression;
+    args: IExpression[];
 
     marks: IIndexAccessMark;
 }
 
 
 export interface IMemberAccessMark extends IInternalExpressionMark {
-    div?: Token;
+    separator?: Token;
 }
 
 
+/**
+ * @interface IMemberAccess
+ * @desc 成员/枚举路径访问：`obj.Value`（`.`）与 `EUnitMovingType/Track`（`/`）
+ * */
 export interface IMemberAccess extends IInternalExpression {
     target: IExpression;
+    separator: "/" | ".";
     property: IIdentifier;
+
+    marks: IMemberAccessMark;
 }
 
 
 export interface IParenthesisExprMark extends IInternalExpressionMark {
     leftParen?: Token;
     rightParen?: Token;
+    comma?: Token;
 }
 
 
+/**
+ * @interface IParenthesisExpr
+ * @desc 括号表达式；若带逗号则是序对 `(a, b)`
+ * */
 export interface IParenthesisExpr extends IInternalExpression {
     expr: IExpression;
+    /** 序对的第二个元素（`(a, b)` 时存在） */
+    second: Nullable<IExpression>;
 
     marks: IParenthesisExprMark;
 }
 
 
 export interface IReferenceMark extends ILeafExpressionMark {
-    dollarOrTildeOrDot?: Token;
-    div?: Token;
+    prefix?: Token;
     value?: Token;
 }
 
 
+/**
+ * @interface IReference
+ * @desc 引用：`$/A/B`（绝对）或 `~/A/B`（相对加载命名空间）
+ * */
 export interface IReference extends ILeafExpression {
-    name: IIdentifier;
+    operator: "$" | "~";
+    segments: IIdentifier[];
 
     marks: IReferenceMark;
 }
@@ -410,8 +453,6 @@ export interface IReference extends ILeafExpression {
 
 export interface IGuidCallMark extends ILeafExpressionMark {
     colon?: Token;
-    leftBrace?: Token;
-    rightBrace?: Token;
     guid?: Token;
     value?: Token;
 }
@@ -469,47 +510,48 @@ export interface IVectorDef extends IInternalExpression {
 }
 
 
-export interface ITypeConstructorMark extends IInternalExpressionMark {
-    leftBracket?: Token;
-    rightBracket?: Token;
-}
-
-
-export interface ITypeConstructor extends IInternalExpression {
-    name: IIdentifier;
-    comments1: IComment[];
-    args: IExpression[];
-
-    marks: ITypeConstructorMark;
-}
-
-
-export interface IPropertyAssignMark extends IInternalExpressionMark {
+export interface IDefinitionExprMark extends IInternalExpressionMark {
     modifier?: Token;
     is?: Token;
 }
 
 
-export interface IPropertyAssignExpr extends IInternalExpression {
-    modifier: Nullable<"private">;
+/**
+ * @interface IDefinitionExpr
+ * @desc 作为值出现的定义：`Member = Named is TType ( … )`、`[private x is TParam()]`
+ * */
+export interface IDefinitionExpr extends IInternalExpression {
+    modifier: Nullable<"export" | "private" | "public">;
     name: IIdentifier;
+    operator: "is" | "=";
     value: IExpression;
-    marks: IPropertyAssignMark;
+
+    marks: IDefinitionExprMark;
 }
 
 
 export interface IArgumentMark extends IInternalNodeMark {
     modifier?: Token;
     colonOrAssignOrIs?: Token;
+    meybeComma?: Token;
 }
 
 
+/**
+ * @interface IArgument
+ * @desc 对象体/实参表中的一个条目
+ * @example Name = value
+ * @example Name is value
+ * @example Name : Type = default
+ * @example value            （位置实参）
+ * */
 export interface IArgument extends IInternalNode {
-    modifier: Nullable<"export" | "public">;
-    name: IIdentifier;
+    modifier: Nullable<"export" | "private" | "public">;
+    name: Nullable<IIdentifier>;
     value: Nullable<IExpression>;
     operator: Nullable<"=" | "is">;
     annotation: Nullable<ITypeRef>;
+    positional: boolean;
     comments1: IComment[];
 
     marks: IArgumentMark;
@@ -540,3 +582,5 @@ export interface IStr extends ILiteral {
 export interface INil extends ILiteral {
     value: "nil";
 }
+
+

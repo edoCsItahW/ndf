@@ -1,30 +1,36 @@
 {
     "comments": {
-        // symbol used for single line comment. Remove this entry if your language does not support line comments
+        // 行注释
         "lineComment": "//",
-        // symbols used for start and end a block comment. Remove this entry if your language does not support block comments
-        "blockComment": [ "/*", "*/", "(*", "*)" ]
+        // 块注释（NDF 同时支持 /* */ 与 (* *)，VS Code 只能声明一对方括号）
+        "blockComment": ["/*", "*/"]
     },
-    // symbols used as brackets
+    // 括号对
     "brackets": [
-        ["{", "}"],
+        ["(", ")"],
         ["[", "]"],
-        ["(", ")"]
+        ["{", "}"]
     ],
-    // symbols that are auto closed when typing
+    // 输入时自动闭合
     "autoClosingPairs": [
-        ["{", "}"],
-        ["[", "]"],
         ["(", ")"],
+        ["[", "]"],
+        ["{", "}"],
         ["\"", "\""],
         ["'", "'"]
     ],
-    // symbols that can be used to surround a selection
+    // 选区包裹
     "surroundingPairs": [
-        ["{", "}"],
-        ["[", "]"],
         ["(", ")"],
+        ["[", "]"],
+        ["{", "}"],
         ["\"", "\""],
         ["'", "'"]
-    ]
+    ],
+    // 标识符：字母/下划线开头（关键字与内建类型名都是标识符形态）
+    "wordPattern": "[A-Za-z_][A-Za-z0-9_]*",
+    "indentationRules": {
+        "increaseIndentPattern": "\\(\\s*$|\\[\\s*$",
+        "decreaseIndentPattern": "^\\s*[\\)\\]]"
+    }
 }

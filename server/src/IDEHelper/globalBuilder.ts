@@ -34,7 +34,7 @@ let ext: string;
 let master: Master<MiddleData & { cacheDir: string }>;
 let cfg: GBConfig;
 let instance: GlobalBuilderIns;
-const VERSION = "2.4.5";
+const VERSION = "3.0.0";
 
 
 /**

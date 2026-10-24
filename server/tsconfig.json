@@ -10,6 +10,5 @@
 		"rootDir": "src"
 	},
 	"include": ["src"],
-	"exclude": ["node_modules", ".vscode-test"],
-	"nium": "C-style\r\n and unicode\u0021"
+	"exclude": ["node_modules", ".vscode-test", "src/IDEHelper/formatter.ts"]
 }
