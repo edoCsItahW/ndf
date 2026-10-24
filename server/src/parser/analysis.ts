@@ -19,11 +19,10 @@ import {
     Assignment,
     BinaryExpr,
     Bool,
-    BuiltinType, CommenComment, Comment,
+    CommenComment, Comment,
     ErrorExpr,
     Expression, FileImportComment,
     Float,
-    GenericType,
     GuidCall,
     Identifier,
     IndexAccess,
@@ -42,14 +41,14 @@ import {
     ParameterDecl,
     ParenthesisExpr,
     Program,
-    PropertyAssignExpr,
     Reference,
     Statement,
     Str,
     TemplateDef,
     TemplateParam,
     TernaryExpr,
-    TypeConstructor,
+    TypeAnnotation,
+    DefinitionExpr,
     TypeRef,
     UnaryExpr,
     UnnamedObj,
@@ -726,7 +725,7 @@ export class Analyser implements IAnalyser {
             const templateType = new TemplateType(BaseType.TEMPLATE, node.name.value);
 
             let parentType: Nullable<TemplateType>;
-            const parentSymbol = this.findSymbol(this.currentScope, node.extend.value);
+            const parentSymbol = this.findSymbol(this.currentScope, node.extend.name.value);
 
             if (parentSymbol
                 && parentSymbol.type instanceof TemplateType
@@ -735,7 +734,7 @@ export class Analyser implements IAnalyser {
                 parentType = parentSymbol.type;
                 node.extend.type = parentType;
 
-            } else if (!parentSymbol && !node.extend.value.startsWith("T"))
+            } else if (!parentSymbol && !node.extend.name.value.startsWith("T"))
                 this.reportError(new NameWarning(
                     this.localet?.("NWA4") || "Parent template almost starts with `T`",
                     node.extend.pos, endPos(node.extend))
@@ -760,7 +759,7 @@ export class Analyser implements IAnalyser {
 
             this.enterScope(prototypeScope, endPos(node.extend));  // 进入原型作用域
 
-            node.members.forEach(member => this.visitMemberAssign(member, node.extend.value));
+            node.members.forEach(member => this.visitMemberAssign(member, node.extend.name.value));
 
             this.exitScope(endPos(node.members.length ? node.members[node.members.length - 1] : node.extend));  // 回到原型作用域
 
@@ -945,89 +944,127 @@ export class Analyser implements IAnalyser {
         this.currentScope.define(symbol);
     }
 
+    /**
+     * @method visitTypeRef
+     * @summary 解析类型引用
+     * @desc `typeRef : typeName typeArgumentList? typeParameterList?`
+     * @remarks
+     * - 内建类型名（软关键字）直接映射到内建类型；
+     * - `LIST<T>` / `List<T>` → 向量，`MAP<K,V>` → 表，`PAIR<A,B>` → 序对；
+     * - 其余名字优先查符号表/全局符号；查不到时视为**外部类型**（游戏引擎类型），
+     *   返回 `ANY` 且不报错——这正是真实语料里绝大多数 `T\w+` 类型的情况。
+     * */
     @methodDebug(analyserDebug, "visitTypeRef")
     @traceback()
     visitTypeRef(node: TypeRef): Type {
-        const methodName = `visit${node.nodeName}`;
+        const name = node.name.value;
 
-        if (methodName in this)
-            return (this[methodName as keyof Analyser] as (node: Node) => Type)(node);
-        else
-            this.reportError(new _TypeError(
-                this.localet?.("NEA11", node.nodeName) || `Unsupported **type reference** type \`${node.nodeName}\``,
-                node.pos, endPos(node)
-            ));
+        node.annotations.forEach(annotation => this.visitTypeAnnotation(annotation));
 
-        return new Type(BaseType.UNKNOWN);
-    }
+        const builtin = this.builtinType(name);
 
-    @methodDebug(analyserDebug, "visitBuiltinType")
-    @traceback()
-    visitBuiltinType(node: BuiltinType): Type {
-        switch (node.name) {
-            case "int":
-                return new Type(BaseType.INT);
-
-            case "float":
-                return new Type(BaseType.FLOAT);
-
-            case "bool":
-                return new Type(BaseType.BOOLEAN);
-
-            case "string":
-                return new Type(BaseType.STRING);
-
-            case "nil":
-                return new Type(BaseType.NIL);
-
-            default:
-                this.reportError(new _TypeError(
-                    this.localet?.("NEA13", node.name)
-                    || `Unsupported **type reference** type \`${node.name}\``,
-                    node.pos, endPos(node)
-                ));
-
-                return new Type(BaseType.UNKNOWN);
+        if (builtin) {
+            node.name.type = builtin;
+            node.type = builtin;
+            return builtin;
         }
-    }
 
-    @methodDebug(analyserDebug, "visitGenericType")
-    @traceback()
-    visitGenericType(node: GenericType): Type {
-        let symbol = this.globalScope.resolve(node.name.value);  // 由于其特性,只能在全局作用域中寻找
+        const lower = name.toLowerCase();
+
+        if (lower === "list" || lower === "pair" || lower === "map") {
+            const args = node.typeArgs.map(arg => this.visitTypeRef(arg));
+
+            if (lower === "list") {
+                const vectorType = new VectorType(BaseType.VECTOR, "List");
+                vectorType.elementType = this.unrepeatedType(args);
+                node.type = vectorType;
+                return vectorType;
+            }
+
+            if (lower === "pair") {
+                const pairType = new PairType(BaseType.PAIR, "Pair");
+                pairType.keyType = args[0] || new Type(BaseType.ANY);
+                pairType.valueType = args[1] || new Type(BaseType.ANY);
+                node.type = pairType;
+                node.name.type = pairType;
+                return pairType;
+            }
+
+            const mapType = new MapType(BaseType.MAP, "Map");
+            mapType.keyType = [args[0] || new Type(BaseType.ANY)];
+            mapType.valueType = [args.length > 1 ? args[1] : new Type(BaseType.ANY)];
+            node.type = mapType;
+            return mapType;
+        }
+
+        node.typeArgs.forEach(arg => this.visitTypeRef(arg));
+
+        const symbol = this.findSymbol(this.currentScope, name);
 
         if (symbol) {
+            node.name.type = symbol.type;
             node.type = symbol.type;
             return symbol.type;
         }
 
-        if (node.name.value.toLowerCase() === "list") {
-            const vectorType = new VectorType(BaseType.VECTOR, "List");
+        // 外部类型：不报错，避免对游戏内建类型产生海量误报
+        const external = new Type(BaseType.ANY, name);
+        node.name.type = external;
+        node.type = external;
+        return external;
+    }
 
-            vectorType.elementType = this.unrepeatedType(node.typeParams.map(param => this.visitTypeRef(param)));
+    /**
+     * @method visitTypeAnnotation
+     * @summary 注解实参（`[required]` / `[GroupBy = "..."]` / `[>= 0]`）
+     * @desc 注解只是编辑器元数据，不参与类型推导；这里只做遍历占位
+     * */
+    @methodDebug(analyserDebug, "visitTypeAnnotation")
+    @traceback()
+    visitTypeAnnotation(node: TypeAnnotation) {
+    }
 
-            node.type = vectorType;
-            return vectorType;
-        } else if (node.name.value.toLowerCase() === "map") {
-            const mapType = new MapType(BaseType.MAP, "Map");
+    /** 内建类型名 → 类型（软关键字，见 lexer/token.ts 的 BUILTIN_TYPE_NAMES） */
+    private builtinType(name: string): Nullable<Type> {
+        switch (name) {
+            case "int":
+            case "integer":
+                return new Type(BaseType.INT);
 
-            mapType.keyType = this.unrepeatedType(node.typeParams.map(param => this.visitTypeRef(param)));
-            mapType.valueType = this.unrepeatedType(node.typeParams.map(param => this.visitTypeRef(param)));
+            case "float":
+            case "single":
+                return new Type(BaseType.FLOAT);
 
-            node.type = mapType;
-            return mapType;
-        } else {
-            const genericType = new _GenericType(BaseType.GENERIC, node.name.value);
+            case "string":
+                return new Type(BaseType.STRING);
 
-            genericType.params = this.unrepeatedType(node.typeParams.map(param => this.visitTypeRef(param)));
+            case "bool":
+            case "boolean":
+                return new Type(BaseType.BOOLEAN);
 
-            symbol = new Symbol(node.name.value, node.pos);
-            node.name.type = genericType;
-            symbol.type = genericType;
+            case "int2":
+            case "int3":
+            case "int4": {
+                const vectorType = new VectorType(BaseType.VECTOR, name);
+                vectorType.elementType = [new Type(BaseType.INT)];
+                return vectorType;
+            }
 
-            this.globalScope.define(symbol);
+            case "float2":
+            case "float3":
+            case "float4": {
+                const vectorType = new VectorType(BaseType.VECTOR, name);
+                vectorType.elementType = [new Type(BaseType.FLOAT)];
+                return vectorType;
+            }
 
-            return genericType;
+            case "color":
+            case "RGB":
+            case "RGBA":
+                return new VectorType(BaseType.VECTOR, name);
+
+            default:
+                return undefined;
         }
     }
 
@@ -1216,38 +1253,28 @@ export class Analyser implements IAnalyser {
     @traceback()
     visitIndexAccess(node: IndexAccess): Type {
         const targetType = this.visitExpression(node.target);
-        const indexType = this.visitExpression(node.index);
+
+        if (!node.args.length)
+            return new Type(BaseType.ANY);
+
+        const indexType = this.visitExpression(node.args[0]);
 
         if (targetType.type === BaseType.VECTOR) {
             if (indexType.type === BaseType.INT)
                 return new Type(targetType.type);
-
-            else
-                this.reportError(new _TypeError(
-                    this.localet?.("NEA20", typeToStr(targetType), "int", typeToStr(indexType))
-                    || `The type of the index signature of \`${typeToStr(targetType)}\` must be \`int\`, but found \`${typeToStr(indexType)}\``,
-                    node.pos, endPos(node)
-                ));
-
         } else if (targetType.type === BaseType.MAP) {
             if (indexType.type === BaseType.STRING)
                 return new Type(targetType.type);
+        } else {
+            // 内建函数/构造器下标调用：float3[0,0,0]、Clamp[…]、sqr[x]、lerp[a,b,c] …
+            node.args.forEach(arg => this.visitExpression(arg));
+            return new Type(BaseType.ANY);
+        }
 
-            else
-                this.reportError(new _TypeError(
-                    this.localet?.("NEA20", typeToStr(targetType), "string", typeToStr(indexType))
-                    || `The type of the index signature of \`${typeToStr(targetType)}\` must be \`string\`, but found \`${typeToStr(indexType)}\``,
-                    node.pos, endPos(node)
-                ));
+        // 其余下标实参也要遍历
+        node.args.slice(1).forEach(arg => this.visitExpression(arg));
 
-        } else
-            this.reportError(new _TypeError(
-                this.localet?.("NEA21", typeToStr(targetType))
-                || `Type \`${typeToStr(targetType)}\` does not support **index access**`,
-                node.pos, endPos(node)
-            ));
-
-        return new Type(BaseType.ERROR);
+        return new Type(BaseType.ANY);
     }
 
     @methodDebug(analyserDebug, "visitMemberAccess")
@@ -1341,10 +1368,21 @@ export class Analyser implements IAnalyser {
 //
 //        node.type = symbol!.type;
 
-        // TODO: 完成引用解析
-        const symbol = this.findSymbol()
+        // 解析引用: `$/name`、`~/name` 或 `./name`，按当前作用域和全局符号查找
+        const symbol = this.findSymbol(this.currentScope, node.name.value);
 
-        return symbol!.type;
+        if (!symbol) {
+            this.reportError(new _TypeError(
+                this.localet?.("NEA15", node.name.value) || `Unknown **identifier** \`${node.name.value}\``,
+                node.pos, endPos(node)
+            ));
+
+            return new Type(BaseType.UNKNOWN);
+        }
+
+        node.type = symbol.type;
+
+        return symbol.type;
     }
 
     @methodDebug(analyserDebug, "visitGuidCall")
@@ -1394,16 +1432,9 @@ export class Analyser implements IAnalyser {
         return type;
     }
 
-    @methodDebug(analyserDebug, "visitTypeConstructor")
+    @methodDebug(analyserDebug, "visitDefinitionExpr")
     @traceback()
-    visitTypeConstructor(node: TypeConstructor): Type {
-        // TODO: 类型构造器的类型检查
-        return new Type(BaseType.ANY);
-    }
-
-    @methodDebug(analyserDebug, "visitPropertyAssignExpr")
-    @traceback()
-    visitPropertyAssignExpr(node: PropertyAssignExpr): Type {
+    visitDefinitionExpr(node: DefinitionExpr): Type {
         let symbol = this.currentScope.resolve(node.name.value);
 
         if (symbol)
@@ -1429,6 +1460,14 @@ export class Analyser implements IAnalyser {
     @methodDebug(analyserDebug, "visitArgument")
     @traceback()
     visitArgument(node: Argument, noParent?: boolean, parentName?: string) {
+        // 位置实参（v2 的 bodyItem: expression）：只推导类型，不定义符号
+        if (!node.name) {
+            if (node.value)
+                node.type = this.visitExpression(node.value);
+
+            return;
+        }
+
         let symbol = this.currentScope.resolve(node.name.value);
 
         if (symbol)
@@ -1799,4 +1838,6 @@ export class Analyser implements IAnalyser {
         this.errors.push(err);
     }
 }
+
+
 

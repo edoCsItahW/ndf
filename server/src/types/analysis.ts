@@ -24,8 +24,9 @@ import {
     ITemplateDef,
     IUnnamedObj,
     ITypeRef,
-    IBuiltinType,
-    IGenericType,
+    ITypeAnnotation,
+    IDefinitionExpr,
+    IArgument,
     IExpression,
     IIdentifier,
     IUnaryExpr,
@@ -41,8 +42,6 @@ import {
     IMapDef,
     IPair,
     IVectorDef,
-    ITypeConstructor,
-    IPropertyAssignExpr,
     ILiteral
 } from "./ast";
 
@@ -60,9 +59,7 @@ export interface IAnalyser {
 
     visitTypeRef(node: ITypeRef): IType;
 
-    visitBuiltinType(node: IBuiltinType): IType;
-
-    visitGenericType(node: IGenericType): IType;
+    visitTypeAnnotation(node: ITypeAnnotation): void;
 
     visitExpression(node: IExpression): IType;
 
@@ -94,9 +91,9 @@ export interface IAnalyser {
 
     visitVectorDef(node: IVectorDef): IType;
 
-    visitTypeConstructor(node: ITypeConstructor): IType;
+    visitDefinitionExpr(node: IDefinitionExpr): IType;
 
-    visitPropertyAssignExpr(node: IPropertyAssignExpr): IType;
+    visitArgument(node: IArgument): void;
 
     visitLiteral(node: ILiteral): IType;
 }
@@ -167,3 +164,4 @@ export interface IScopeJSON {
     symbols: Record<string, ISymbolJSON>;
     parent?: number | IScopeJSON;
 }
+

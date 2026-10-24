@@ -1,6 +1,9 @@
 # NDF
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/edoCsItahW/ndf)
+[![License](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+![CalVer](https://img.shields.io/badge/CalVer-2026.10.24-informational.svg)
+![SemVer](https://img.shields.io/badge/SemVer-3.0.0-blue.svg)
+[![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-1f6feb.svg)](https://deepwiki.com/edoCsItahW/ndf)
 
 <details>
 <summary>中文版</summary>
@@ -10,8 +13,6 @@ NDF语言是一种用于描述游戏数据的脚本语言。
 > 这里的ndf并非指SQL文件中的ndf文件,它们不是同一个东西。
 
 ## 特性
-
-目前,NDF语言已经完成了它的词法分析、语法分析、语义分析、IDE支持(部分)等重要轮子。这是一个里程碑式的进展。
 
 1. 支持语法高亮
    ![syntax highlighting](./static/highlight.png)
@@ -111,10 +112,11 @@ NDF语言是一种用于描述游戏数据的脚本语言。
 
 ## 发布说明
 
-这是版本2.0.3的发布说明。对比上一个版本该版本的开放时间都在NDF的语言分析器上。
-同时已经对分析器进行了语料测试,但是依然无法保证完全没有问题,因为Eugen System没有公布NDF的完整语法和语义。
-所以该分析器只能无限的接近真正的NDF解释/编译器,但不等于它。并且接下来会将更多精力放在IDE(VS Code)的支持上。
+这是版本3.0.0的发布说明。该版本随NDF语言新语法进行了适应性、破坏性更新。
+由于Eugen System没有公布NDF的完整语法和语义，解析器目前的语法仅根据《ndf_reference_manual.pdf》与官方ndf语料逆推。
+因此该分析器只能无限的接近真正的NDF解释/编译器,但不等于它。
 
+由于性能问题基于C++的重制仓库目前处于private状态，因此[原仓库](https://github.com/edoCsItahW/ndf)不再支持。
 
 </details>
 
@@ -124,9 +126,6 @@ NDF language is a scripting language used to describe game data.
 > The ndf here does not refer to the ndf file in the SQL file, they are not the same thing.
 
 ## Features
-
-Currently, the NDF language has completed its lexical analysis, syntax analysis, semantic analysis, and partial IDE
-support, representing a milestone progress.
 
 1. Support for syntax highlighting
    ![syntax highlighting](./static/highlight.png)
@@ -233,12 +232,10 @@ please leave a comment in the [issues](https://github.com/edoCsItahW/ndf/issues)
 
 ## Release Notes
 
-This is the release note for version 2.0.3. Compared to the previous version, the improvements in this version are
-focused on the NDF language parser.
+These are the release notes for version 3.0.0. This version includes adaptive and breaking changes for the new NDF language syntax.
+Since Eugen System has not published the complete syntax and semantics of NDF, the parser's current grammar is only reverse-engineered based on *ndf_reference_manual.pdf* and official NDF corpora.
+Therefore, this analyzer can only infinitely approach the real NDF interpreter/compiler, but it is not equivalent to it.
 
-Corpus testing has been conducted on the parser, but it is still impossible to guarantee that there are no issues, as
-Eugen System has not disclosed the complete grammar and semantics of NDF.
-Therefore, this parser can only infinitely approach a true NDF interpreter/compiler but is not equivalent to it. Moving
-forward, more effort will be dedicated to IDE (VS Code) support.
+Due to performance issues, the C++-based remake repository is currently private, so the [original repository](https://github.com/edoCsItahW/ndf) is no longer supported.
 
 ---
